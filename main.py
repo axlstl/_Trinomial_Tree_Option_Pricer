@@ -13,9 +13,16 @@ if __name__=="__main__":
     from market import Market
     from options import VanillaOption
 
-    option=VanillaOption(strike=110,strike_date=dt.now(),option_type="call",exercise_type="european",mty_date=dt.now()+timedelta(days=365))
+
+    mty_date=dt.now()+timedelta(days=365)
+    option=VanillaOption(strike=110,strike_date=dt.now(),option_type="call",exercise_type="european",mty_date=mty_date)
     market=Market(S0=100,rf_rate=0.05,volatility=0.2)
-    maturity=dt.now()+timedelta(days=365)
+    
 
-    model=TrinomialModel(market,option,maturity,steps=3)
 
+    model_binomial=BinomialModel(market,option,steps=1000)    
+    model_tri=TrinomialModel(market,option,steps=1000)
+
+
+    print(model_binomial.price_from_tree())
+    print(model_tri.price_from_tree())

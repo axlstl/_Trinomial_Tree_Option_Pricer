@@ -1,6 +1,7 @@
 from .lattice import LatticeModel
+from constants import TIME_BASIS
 from node import Node
-
+from collections import defaultdict
 import numpy as np
 
 
@@ -10,39 +11,49 @@ class TrinomialModel(LatticeModel):
     def __init__(self, market, option, steps):
         super().__init__(market, option, steps)
 
-        self.initialize_parameters()
+        self._initialize_parameters()
 
-        self.build_trunk()
-        self.build_tree()
+        self._map_dividends()
+
+        self._build_trunk()
+        self._build_trunk_forwards()
+
+        self._build_tree()
 
 
-    def price_from_tree(self):
 
-        discount = np.exp(-self.rf_rate * self.dt)
+    def _build_trunk_forwards(self):
+        curr_trunk=self.root
+        curr_trunk.forward=self.S0
 
-        trunk = self.last_trunk
-        node = self._get_bottom_node(trunk)
+        while curr_trunk.next_trunk is not None:
+            next_trunk=curr_trunk.next_trunk
+            next_date=self.start_date+next_trunk.step*self.index_dt
 
-        while node is not None:
-            node.opt_price = self.option.payoff(node.underlying_price)
-            node = node.up_node
+            forward=curr_trunk.forward*np.exp(self.rf_rate*self.dt)
 
-        # backward propagation
-        trunk = trunk.prev_trunk
-        while trunk is not None:
-            node = self._get_bottom_node(trunk)
-            while node is not None:
-                continuation = discount * (self.p_up * node.next_up.opt_price+ self.p_mid * node.next_mid.opt_price+ self.p_down * node.next_down.opt_price)
-                
-                if self.option.exercise_type == "american":
-                    node.opt_price = max(continuation,self.option.payoff(node.underlying_price))
-                else:
-                    node.opt_price = continuation
-                node = node.up_node
-            trunk = trunk.prev_trunk
+            for dividend in self.dividends_by_step[next_trunk.step]:
+                forward-=dividend.amount*np.exp(self.rf_rate*((next_date-dividend.date).total_seconds()/TIME_BASIS))
 
-        return self.root_node.opt_price
-        
+            next_trunk.forward=forward
+            curr_trunk=next_trunk
+
+    def _map_dividends(self):
+        dict_div_index = defaultdict(list)
+
+        for dividend in self.market.dividends:
+            ratio = (dividend.date-self.start_date)/self.index_dt
+            curr_idx = int(ratio)
+
+            if ratio == curr_idx:
+                step = curr_idx
+            else:
+                step = curr_idx + 1
+
+            if 1 <= step <= self.steps:
+                dict_div_index[step].append(dividend)
+
+        self.dividends_by_step = dict_div_index
 
 
 
@@ -84,3 +95,6 @@ class TrinomialModel(LatticeModel):
         parent.next_down = children[nb_up]
         parent.next_mid = children[nb_up + 1]
         parent.next_up = children[nb_up + 2]
+
+    def _get_expected_value(self,node):
+        return self.p_up * node.next_up.opt_price+ self.p_mid * node.next_mid.opt_price+ self.p_down * node.next_down.opt_price

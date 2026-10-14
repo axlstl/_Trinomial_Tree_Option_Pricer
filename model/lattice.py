@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from datetime import datetime as dt
+from datetime import datetime
 
 import numpy as np
 
 from node import Node, TrunkNode
+from constants import TIME_BASIS
 
-TIME_BASIS = 365 * 24 * 3600
 
 class LatticeModel(ABC):
 
@@ -14,9 +14,9 @@ class LatticeModel(ABC):
         self.option = option
         self.steps = steps
 
-        self.start_date = dt.now()
+        self.start_date = datetime.now()
         self.dt = ((self.mty_date - self.start_date).total_seconds()/ (TIME_BASIS)/ self.steps)
-
+        self.index_dt = (self.mty_date - self.start_date) / self.steps
         self.root = TrunkNode(self.S0, 0)
 
         self.alpha = None
@@ -24,28 +24,24 @@ class LatticeModel(ABC):
         self.p_mid = None
         self.p_down = None
 
-    def initialize_parameters(self):
+    def _initialize_parameters(self):
         self.alpha = self._compute_alpha()
         self.p_up, self.p_mid, self.p_down = self._compute_probabilities()
 
-    def build_trunk(self):
-        curr_node = self.root
-        growth_factor = np.exp(self.rf_rate*self.dt)
+    def _build_trunk(self):
+        curr_trunk = self.root
 
-        for step in range(self.steps):
+        for step in range(1,self.steps+1):
+            next_trunk = TrunkNode(None,step)
 
-            price = curr_node.forward*growth_factor
+            next_trunk.prev_trunk = curr_trunk
+            curr_trunk.next_trunk = next_trunk
 
-            next_node = TrunkNode(price,step+1)
-            next_node.prev_trunk = curr_node
-            curr_node.next_trunk = next_node
+            curr_trunk = next_trunk
 
-            curr_node = next_node
+        self.last_trunk = curr_trunk
 
-        self.last_trunk = curr_node
-
-
-    def build_tree(self):
+    def _build_tree(self):
         curr_trunk = self.root
         self._initialize_root()
 
@@ -79,6 +75,34 @@ class LatticeModel(ABC):
             parents = children
             curr_trunk = next_trunk
 
+
+    def price_from_tree(self):
+
+        discount = np.exp(-self.rf_rate * self.dt)
+
+        trunk = self.last_trunk
+        node = self._get_bottom_node(trunk)
+
+        while node is not None:
+            node.opt_price = self.option.payoff(node.underlying_price)
+            node = node.up_node
+
+        # backward propagation
+        trunk = trunk.prev_trunk
+        while trunk is not None:
+            node = self._get_bottom_node(trunk)
+            while node is not None:
+                continuation = discount * (self._get_expected_value(node))
+                
+                if self.option.exercise_type == "american":
+                    node.opt_price = max(continuation,self.option.payoff(node.underlying_price))
+                else:
+                    node.opt_price = continuation
+                node = node.up_node
+            trunk = trunk.prev_trunk
+
+        return self.root_node.opt_price
+
     def _get_bottom_node(self, trunk):
         node = trunk.down_node
 
@@ -96,6 +120,12 @@ class LatticeModel(ABC):
         pass
 
     @abstractmethod
+    def _build_trunk_forwards(self):
+        pass
+
+
+
+    @abstractmethod
     def _initialize_root(self):
         pass
 
@@ -104,7 +134,7 @@ class LatticeModel(ABC):
         pass
 
     @abstractmethod
-    def _node_price(self,trunk,i,step):
+    def _node_price(self,trunk,nb_up,step):
         pass
 
     @abstractmethod
@@ -113,6 +143,10 @@ class LatticeModel(ABC):
 
     @abstractmethod
     def _link_next_nodes(self,parent,children,nb_up):
+        pass
+
+    @abstractmethod
+    def _get_expected_value(self,node):
         pass
 
     @property

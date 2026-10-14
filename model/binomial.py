@@ -2,22 +2,28 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 
-from datetime import datetime as dt
 from .lattice import LatticeModel
-from node import Node, TrunkNode
+from node import Node
 import numpy as np
-import time
 
 class BinomialModel(LatticeModel):
 
     def __init__(self, market, option, steps):
         super().__init__(market, option, steps)
+        if self.market.dividends:
+            raise ValueError("ATTENTION  DIV INTERDIT EN BINOMIAL")
 
-        self.initialize_parameters()
+        
+        self._initialize_parameters()
 
-        self.build_trunk()
-        self.build_tree()
+        self._build_trunk()
+        self._build_trunk_forwards()
 
+        self._build_tree()
+
+
+    def _get_expected_value(self, node):
+        return self.p_up * node.next_up.opt_price + self.p_down * node.next_down.opt_price
     def _compute_alpha(self):
         exp_sigma_dt = (1 + np.exp(self.volatility**2 * self.dt)) / 2
         return exp_sigma_dt + np.sqrt(exp_sigma_dt**2 - 1)
@@ -28,6 +34,15 @@ class BinomialModel(LatticeModel):
 
         return p_up, None, p_down
 
+    def _build_trunk_forwards(self):
+        curr_trunk = self.root
+        curr_trunk.forward = self.S0
+
+        while curr_trunk.next_trunk is not None:
+            next_trunk = curr_trunk.next_trunk
+            next_trunk.forward = curr_trunk.forward* np.exp(self.rf_rate*self.dt)
+            curr_trunk = next_trunk
+            
     def _initialize_root(self):
         curr_trunk = self.root
 
@@ -63,35 +78,6 @@ class BinomialModel(LatticeModel):
 
 
 
-    def price_from_tree(self):
-
-        start_time = time.time()
-        discount = np.exp(-self.rf_rate * self.dt)
-
-        # terminal payoff
-        trunk = self.last_trunk
-        node = self._get_bottom_node(trunk)
-
-        while node is not None:
-            node.opt_price = self.option.payoff(node.underlying_price)
-            node = node.up_node
-
-        # backward propagation
-        trunk = trunk.prev_trunk
-        while trunk is not None:
-            node = self._get_bottom_node(trunk)
-            while node is not None:
-                continuation = discount * (self.p_up * node.next_up.opt_price+ self.p_down * node.next_down.opt_price)
-                if self.option.exercise_type == "american":
-                    node.opt_price = max(continuation,self.option.payoff(node.underlying_price))
-                else:
-                    node.opt_price = continuation
-                node = node.up_node
-            trunk = trunk.prev_trunk
-        
-        end_time = time.time()
-
-        return self.root_node.opt_price, (end_time - start_time)
 
     def print_trunk(self):
         #a modifier pour exporter dans un csv
