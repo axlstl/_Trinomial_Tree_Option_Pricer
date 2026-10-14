@@ -7,13 +7,44 @@ import numpy as np
 
 class TrinomialModel(LatticeModel):
 
-    def __init__(self, market, option, mty_date, steps):
-        super().__init__(market, option, mty_date, steps)
+    def __init__(self, market, option, steps):
+        super().__init__(market, option, steps)
 
         self.initialize_parameters()
 
         self.build_trunk()
         self.build_tree()
+
+
+    def price_from_tree(self):
+
+        discount = np.exp(-self.rf_rate * self.dt)
+
+        trunk = self.last_trunk
+        node = self._get_bottom_node(trunk)
+
+        while node is not None:
+            node.opt_price = self.option.payoff(node.underlying_price)
+            node = node.up_node
+
+        # backward propagation
+        trunk = trunk.prev_trunk
+        while trunk is not None:
+            node = self._get_bottom_node(trunk)
+            while node is not None:
+                continuation = discount * (self.p_up * node.next_up.opt_price+ self.p_mid * node.next_mid.opt_price+ self.p_down * node.next_down.opt_price)
+                
+                if self.option.exercise_type == "american":
+                    node.opt_price = max(continuation,self.option.payoff(node.underlying_price))
+                else:
+                    node.opt_price = continuation
+                node = node.up_node
+            trunk = trunk.prev_trunk
+
+        return self.root_node.opt_price
+        
+
+
 
     def _compute_alpha(self):
         return np.exp(self.volatility * np.sqrt(3 * self.dt))
@@ -49,7 +80,7 @@ class TrinomialModel(LatticeModel):
         next_trunk.mid_node = children[step]
         next_trunk.down_node = children[step]
 
-    def _link_next_nodes(self,parent,children,index):
-        parent.next_down = children[index]
-        parent.next_mid = children[index + 1]
-        parent.next_up = children[index + 2]
+    def _link_next_nodes(self,parent,children,nb_up):
+        parent.next_down = children[nb_up]
+        parent.next_mid = children[nb_up + 1]
+        parent.next_up = children[nb_up + 2]

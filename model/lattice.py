@@ -9,10 +9,9 @@ TIME_BASIS = 365 * 24 * 3600
 
 class LatticeModel(ABC):
 
-    def __init__(self, market, option, mty_date, steps):
+    def __init__(self, market, option, steps):
         self.market = market
         self.option = option
-        self.mty_date = mty_date
         self.steps = steps
 
         self.start_date = dt.now()
@@ -80,6 +79,14 @@ class LatticeModel(ABC):
             parents = children
             curr_trunk = next_trunk
 
+    def _get_bottom_node(self, trunk):
+        node = trunk.down_node
+
+        while node.down_node is not None:
+            node = node.down_node
+
+        return node
+
     @abstractmethod
     def _compute_alpha(self):
         pass
@@ -105,7 +112,7 @@ class LatticeModel(ABC):
         pass
 
     @abstractmethod
-    def _link_next_nodes(self,parent,children,i):
+    def _link_next_nodes(self,parent,children,nb_up):
         pass
 
     @property

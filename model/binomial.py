@@ -10,8 +10,8 @@ import time
 
 class BinomialModel(LatticeModel):
 
-    def __init__(self, market, option, mty_date, steps):
-        super().__init__(market, option, mty_date, steps)
+    def __init__(self, market, option, steps):
+        super().__init__(market, option, steps)
 
         self.initialize_parameters()
 
@@ -28,69 +28,40 @@ class BinomialModel(LatticeModel):
 
         return p_up, None, p_down
 
-
-    def build_tree(self):
+    def _initialize_root(self):
         curr_trunk = self.root
 
         self.root_node = Node(self.S0, 0)
+
         self.root.up_node = self.root_node
         self.root.down_node = self.root_node
+
         self.root_node.up_count = 0
         self.root_node.trunk_node = curr_trunk
+ 
+    def _node_count(self,step):
+        return step + 1
 
-        parents = [self.root_node]
+    def _node_price(self,next_trunk,nb_up,step):
+        return next_trunk.forward*self.alpha**(2*nb_up-step)
 
-        # loop on each trunknode
-        while curr_trunk.next_trunk is not None:
-            next_trunk = curr_trunk.next_trunk
-            step = next_trunk.step
-            children = []
-            prev_node = None
+    def _attach_trunk(self,next_trunk,children,step):
+        middle = step // 2
 
-            # creation of each node
-            nb_up_max = step + 1
-            for nb_up in range(nb_up_max):
-                price = next_trunk.forward*self.alpha**(2*nb_up-step)
+        if step % 2 == 0:
+            next_trunk.down_node = children[middle]
+            next_trunk.up_node = children[middle]
 
-                # new node
-                node = Node(price, step)
-                node.up_count = nb_up
-                node.trunk_node = next_trunk
+        else:
+            next_trunk.down_node = children[middle]
+            next_trunk.up_node = children[middle + 1]
 
-                # vertical links between nodes
-                if prev_node is not None:
-                    prev_node.up_node = node
-                    node.down_node = prev_node
+    def _link_next_nodes(self,parent,children,nb_up):
 
-                children.append(node)
-                prev_node = node
+        parent.next_down = children[nb_up]
+        parent.next_up = children[nb_up + 1]
 
-            # links between trunk and closest nodes
-            middle = step // 2
 
-            if step % 2 == 0:
-                next_trunk.down_node = children[middle]
-                next_trunk.up_node = children[middle]
-
-            else:
-                next_trunk.down_node = children[middle]
-                next_trunk.up_node = children[middle + 1]
-
-            # horizontal links between nodes
-            for nb_up, parent in enumerate(parents):
-                parent.next_down = children[nb_up]
-                parent.next_up = children[nb_up+1]
-
-            parents = children
-            curr_trunk = next_trunk
-
-    def get_bottom_node(self, trunk):
-        node = trunk.down_node
-
-        while node.down_node is not None:
-            node = node.down_node
-
-        return node
 
     def price_from_tree(self):
 
@@ -99,7 +70,7 @@ class BinomialModel(LatticeModel):
 
         # terminal payoff
         trunk = self.last_trunk
-        node = self.get_bottom_node(trunk)
+        node = self._get_bottom_node(trunk)
 
         while node is not None:
             node.opt_price = self.option.payoff(node.underlying_price)
@@ -108,7 +79,7 @@ class BinomialModel(LatticeModel):
         # backward propagation
         trunk = trunk.prev_trunk
         while trunk is not None:
-            node = self.get_bottom_node(trunk)
+            node = self._get_bottom_node(trunk)
             while node is not None:
                 continuation = discount * (self.p_up * node.next_up.opt_price+ self.p_down * node.next_down.opt_price)
                 if self.option.exercise_type == "american":
