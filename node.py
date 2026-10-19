@@ -17,10 +17,14 @@ class Node:
         self.next_mid = None
         self.next_down = None
 
+        self.p_up = None
+        self.p_mid = None
+        self.p_down = None
+        
         self.trunk_node = None
 
         self.opt_price = None
-
+        self.cum_proba = 0.0
 class TrunkNode:
 
     def __init__(self, forward, step):

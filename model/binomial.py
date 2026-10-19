@@ -8,12 +8,11 @@ import numpy as np
 
 class BinomialModel(LatticeModel):
 
-    def __init__(self, market, option, steps):
-        super().__init__(market, option, steps)
-        if self.market.dividends:
-            raise ValueError("ATTENTION  DIV INTERDIT EN BINOMIAL")
+    def __init__(self, market, option, steps, pricing_date):
+        super().__init__(market, option, steps, pricing_date)
 
-        
+        if self.market.dividends:
+            raise ValueError("no dividends allowed for binomial model")
         self._initialize_parameters()
 
         self._build_trunk()
@@ -24,9 +23,10 @@ class BinomialModel(LatticeModel):
 
     def _get_expected_value(self, node):
         return self.p_up * node.next_up.opt_price + self.p_down * node.next_down.opt_price
+    
     def _compute_alpha(self):
-        exp_sigma_dt = (1 + np.exp(self.volatility**2 * self.dt)) / 2
-        return exp_sigma_dt + np.sqrt(exp_sigma_dt**2 - 1)
+        exp_sigma_dt = (1 + np.exp((self.volatility ** 2) * self.dt)) / 2
+        return exp_sigma_dt + np.sqrt((exp_sigma_dt ** 2) - 1)
 
     def _compute_probabilities(self):
         p_up = 1 / (self.alpha + 1)
@@ -40,47 +40,49 @@ class BinomialModel(LatticeModel):
 
         while curr_trunk.next_trunk is not None:
             next_trunk = curr_trunk.next_trunk
-            next_trunk.forward = curr_trunk.forward* np.exp(self.rf_rate*self.dt)
+            next_trunk.forward = curr_trunk.forward * np.exp(self.rf_rate * self.dt)
             curr_trunk = next_trunk
             
-    def _initialize_root(self):
-        curr_trunk = self.root
+    def _build_next_layer(self, trunk):
+        next_trunk = trunk.next_trunk
 
-        self.root_node = Node(self.S0, 0)
+        step = next_trunk.step
 
-        self.root.up_node = self.root_node
-        self.root.down_node = self.root_node
+        child = Node(next_trunk.forward * self.alpha**(-step), step)
+        child.up_count = 0
+        child.trunk_node = next_trunk
 
-        self.root_node.up_count = 0
-        self.root_node.trunk_node = curr_trunk
- 
-    def _node_count(self,step):
-        return step + 1
+        bottom_node = child
+        parent = self._get_bottom_node(trunk)
 
-    def _node_price(self,next_trunk,nb_up,step):
-        return next_trunk.forward*self.alpha**(2*nb_up-step)
+        while parent is not None:
+            parent.next_down = child
 
-    def _attach_trunk(self,next_trunk,children,step):
-        middle = step // 2
+            upper = Node(child.underlying_price * self.alpha**2, step)
+            upper.up_count = child.up_count + 1
+            upper.trunk_node = next_trunk
+
+            child.up_node = upper
+
+            upper.down_node = child
+            parent.next_up = upper
+            child = upper
+            
+            parent = parent.up_node
+
+        mid_node = bottom_node
+        for i in range(step // 2):
+            mid_node = mid_node.up_node
+        next_trunk.down_node = mid_node
 
         if step % 2 == 0:
-            next_trunk.down_node = children[middle]
-            next_trunk.up_node = children[middle]
-
+            next_trunk.mid_node = mid_node
         else:
-            next_trunk.down_node = children[middle]
-            next_trunk.up_node = children[middle + 1]
-
-    def _link_next_nodes(self,parent,children,nb_up):
-
-        parent.next_down = children[nb_up]
-        parent.next_up = children[nb_up + 1]
-
-
+            next_trunk.mid_node = mid_node.up_node
 
 
     def print_trunk(self):
-        #a modifier pour exporter dans un csv
+
         curr = self.root
 
         while curr is not None:
@@ -103,7 +105,7 @@ class BinomialModel(LatticeModel):
             curr = curr.next_trunk
 
     def print_tree(self):
-        # a modifier pour exporter dans un txt
+
         nodes = [self.root_node]
         step = 0
 
@@ -145,9 +147,6 @@ class BinomialModel(LatticeModel):
         node_radius=6,
     ):
 
-        # =========================================================
-        # 1. Retrieve all nodes
-        # =========================================================
 
         def get_bottom_node(trunk):
 
@@ -183,17 +182,13 @@ class BinomialModel(LatticeModel):
             trunk = trunk.next_trunk
 
 
-        # =========================================================
-        # 2. Retrieve all underlying prices
-        # =========================================================
-
         all_spots = []
 
         for col in columns:
             for node in col:
                 all_spots.append(node.underlying_price)
 
-        # also include the forward prices
+
         trunk = self.root
 
         while trunk is not None:
@@ -204,10 +199,6 @@ class BinomialModel(LatticeModel):
         s_min = min(all_spots)
         s_max = max(all_spots)
 
-
-        # =========================================================
-        # 3. Retrieve option prices
-        # =========================================================
 
         all_option_prices = []
 
@@ -222,10 +213,6 @@ class BinomialModel(LatticeModel):
         else:
             v_max = 0
 
-
-        # =========================================================
-        # 4. SVG dimensions
-        # =========================================================
 
         margin_left = 180
         margin_right = 180
@@ -242,10 +229,6 @@ class BinomialModel(LatticeModel):
         height = graph_height + margin_top + margin_bottom
 
 
-        # =========================================================
-        # 5. Convert a financial price into a vertical coordinate
-        # =========================================================
-
         def price_to_y(price):
 
             if abs(s_max - s_min) < 1e-14:
@@ -256,17 +239,12 @@ class BinomialModel(LatticeModel):
                 / (s_max - s_min)
             )
 
-            # SVG y increases DOWNWARD,
-            # so high financial prices must have low y coordinates
+
             return (
                 margin_top
                 + (1 - relative_position) * graph_height
             )
 
-
-        # =========================================================
-        # 6. Coordinates of tree nodes
-        # =========================================================
 
         coords = {}
 
@@ -283,10 +261,6 @@ class BinomialModel(LatticeModel):
                 coords[node] = (x, y)
 
 
-        # =========================================================
-        # 7. Option value -> white/red color
-        # =========================================================
-
     def option_price_to_color(option_price):
 
         if option_price is None:
@@ -298,21 +272,18 @@ class BinomialModel(LatticeModel):
         t = option_price / v_max
         t = max(0.0, min(1.0, t))
 
-        # 0   -> bleu
-        # 0.5 -> blanc
-        # 1   -> rouge
 
         if t <= 0.5:
-            # interpolation bleu -> blanc
-            u = t / 0.5   # u in [0,1]
+
+            u = t / 0.5
 
             r = int(0   + u * (255 - 0))
             g = int(0   + u * (255 - 0))
             b = int(255 + u * (255 - 255))
 
         else:
-            # interpolation blanc -> rouge
-            u = (t - 0.5) / 0.5   # u in [0,1]
+
+            u = (t - 0.5) / 0.5
 
             r = 255
             g = int(255 + u * (0 - 255))
@@ -320,230 +291,4 @@ class BinomialModel(LatticeModel):
 
         return f"rgb({r},{g},{b})"
 
-
-        # =========================================================
-        # 8. SVG header
-        # =========================================================
-
-        # svg = []
-
-        # svg.append(
-        #     f'<svg xmlns="http://www.w3.org/2000/svg" '
-        #     f'width="{width}" '
-        #     f'height="{height}" '
-        #     f'viewBox="0 0 {width} {height}">'
-        # )
-
-        # svg.append(
-        #     '<rect width="100%" height="100%" fill="white"/>'
-        # )
-
-
-        # # =========================================================
-        # # 9. Draw tree branches
-        # # =========================================================
-
-        # for col in columns:
-
-        #     for node in col:
-
-        #         x1, y1 = coords[node]
-
-        #         if node.next_up is not None:
-
-        #             x2, y2 = coords[node.next_up]
-
-        #             svg.append(
-        #                 f'<line '
-        #                 f'x1="{x1}" y1="{y1}" '
-        #                 f'x2="{x2}" y2="{y2}" '
-        #                 f'stroke="#AAAAAA" '
-        #                 f'stroke-width="2"/>'
-        #             )
-
-        #         if node.next_down is not None:
-
-        #             x2, y2 = coords[node.next_down]
-
-        #             svg.append(
-        #                 f'<line '
-        #                 f'x1="{x1}" y1="{y1}" '
-        #                 f'x2="{x2}" y2="{y2}" '
-        #                 f'stroke="#AAAAAA" '
-        #                 f'stroke-width="2"/>'
-        #             )
-
-
-        # # =========================================================
-        # # 10. Draw trunk according to REAL forward price
-        # # =========================================================
-
-        # trunk_coords = []
-
-        # trunk = self.root
-
-        # while trunk is not None:
-
-        #     x = (
-        #         margin_left
-        #         + trunk.step * x_spacing
-        #     )
-
-        #     y = price_to_y(
-        #         trunk.forward
-        #     )
-
-        #     trunk_coords.append(
-        #         (x, y)
-        #     )
-
-        #     trunk = trunk.next_trunk
-
-
-        # # black trunk lines
-        # for i in range(
-        #     len(trunk_coords) - 1
-        # ):
-
-        #     x1, y1 = trunk_coords[i]
-        #     x2, y2 = trunk_coords[i + 1]
-
-        #     svg.append(
-        #         f'<line '
-        #         f'x1="{x1}" y1="{y1}" '
-        #         f'x2="{x2}" y2="{y2}" '
-        #         f'stroke="black" '
-        #         f'stroke-width="5"/>'
-        #     )
-
-
-        # # black trunk circles
-        # for x, y in trunk_coords:
-
-        #     svg.append(
-        #         f'<circle '
-        #         f'cx="{x}" cy="{y}" '
-        #         f'r="8" '
-        #         f'fill="black"/>'
-        #     )
-
-
-        # # =========================================================
-        # # 11. Draw tree nodes
-        # # =========================================================
-
-        # for col in columns:
-
-        #     for node in col:
-
-        #         x, y = coords[node]
-
-        #         color = option_price_to_color(
-        #             node.opt_price
-        #         )
-
-        #         if node.opt_price is None:
-        #             v_text = "None"
-        #         else:
-        #             v_text = f"{node.opt_price:.2f}"
-
-
-        #         # node circle
-        #         svg.append(
-        #             f'<circle '
-        #             f'cx="{x}" cy="{y}" '
-        #             f'r="{node_radius}" '
-        #             f'fill="{color}" '
-        #             f'stroke="black" '
-        #             f'stroke-width="1"/>'
-        #         )
-
-
-
-         
-
-        # # =========================================================
-        # # 12. Color legend : WHITE -> RED
-        # # =========================================================
-
-        # legend_x = 50
-        # legend_y = height - 70
-
-        # legend_width = 500
-        # legend_height = 25
-
-        # n_colors = 100
-
-        # for i in range(n_colors):
-
-        #     t = i / (n_colors - 1)
-
-        #     fake_price = t * v_max
-
-        #     color = option_price_to_color(
-        #         fake_price
-        #     )
-
-        #     x = (
-        #         legend_x
-        #         + t * legend_width
-        #     )
-
-        #     svg.append(
-        #         f'<rect '
-        #         f'x="{x}" '
-        #         f'y="{legend_y}" '
-        #         f'width="{legend_width / n_colors + 1}" '
-        #         f'height="{legend_height}" '
-        #         f'fill="{color}"/>'
-        #     )
-
-
-        # svg.append(
-        #     f'<text '
-        #     f'x="{legend_x}" '
-        #     f'y="{legend_y - 10}" '
-        #     f'font-family="Arial" '
-        #     f'font-size="16">'
-        #     f'Option price'
-        #     f'</text>'
-        # )
-
-
-        # svg.append(
-        #     f'<text '
-        #     f'x="{legend_x}" '
-        #     f'y="{legend_y + 50}" '
-        #     f'font-family="Arial" '
-        #     f'font-size="16">'
-        #     f'0'
-        #     f'</text>'
-        # )
-
-
-        # svg.append(
-        #     f'<text '
-        #     f'x="{legend_x + legend_width}" '
-        #     f'y="{legend_y + 50}" '
-        #     f'text-anchor="end" '
-        #     f'font-family="Arial" '
-        #     f'font-size="16">'
-        #     f'{v_max:.2f}'
-        #     f'</text>'
-        # )
-
-
-        # # =========================================================
-        # # 13. End SVG
-        # # =========================================================
-
-        # svg.append("</svg>")
-
-        # with open(
-        #     filename,
-        #     "w",
-        #     encoding="utf-8"
-        # ) as f:
-
-        #     f.write("\n".join(svg))
 

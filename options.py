@@ -10,11 +10,9 @@ class Option(ABC):
 
 class VanillaOption(Option):
 
-    def __init__(self, strike, strike_date, option_type, exercise_type,mty_date):
+    def __init__(self, strike, option_type, exercise_type,mty_date):
         
         self.strike = strike
-
-        self.strike_date = strike_date
 
         self.option_type = option_type
         self.exercise_type = exercise_type
