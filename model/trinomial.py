@@ -62,6 +62,10 @@ class TrinomialModel(LatticeModel):
             -This function can be called while building the trunk forwards, in which case we only need the expected value (to get the forward value)
             -While building the tree, we need both the expected value (to get mid node) and the variance (to get the spacing of up_node and down_node + their corresponding probabilities)
         """
+
+        if spot <= 0:
+            return 0, 0
+        
         next_date = self.start_date + (self.mty_date - self.start_date) * next_step / self.steps
         expected_value = spot * np.exp(self.rf_rate * self.dt)
         adjusted_spot = spot #if theres no dividend, then the spot in the variance is just the spot
@@ -73,7 +77,8 @@ class TrinomialModel(LatticeModel):
             expected_value -= dividend.amount * capitalization_factor
             adjusted_spot -= dividend.amount * time_spread / self.dt #in the case there are dividends, the spot is adjusted by D * (t+dt-t_div)/dt
 
-
+        if expected_value <= 0:
+            return 0,0
         variance = adjusted_spot ** 2 * np.exp(2 * self.rf_rate * self.dt) * (np.exp(self.volatility**2 * self.dt)-1)
         return expected_value, variance
 
@@ -107,7 +112,18 @@ class TrinomialModel(LatticeModel):
         and sum(p_i*S_i^2) = V + E^2"""
         next_trunk = curr_trunk.next_trunk
 
-        next_mid_node = Node(next_trunk.forward, next_trunk.step)
+
+        s_prev = curr_trunk.mid_node.underlying_price
+        base_forward = next_trunk.forward
+
+        #added to prevent the case where the forward is negative (if final div > s)
+        if base_forward <= 0:
+            #if the forward is negative, we take the previous mid node to get the next node
+            base_forward = s_prev * np.exp(self.rf_rate * self.dt)
+        if base_forward <= 0:
+            base_forward = 1
+        
+        next_mid_node = Node(base_forward, next_trunk.step)
 
         next_mid_node.trunk_node=  next_trunk
         next_mid_node.up_count = 0
