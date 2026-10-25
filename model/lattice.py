@@ -3,20 +3,22 @@ from datetime import datetime
 
 import numpy as np
 
+from options import Option
 from node import Node, TrunkNode
 from constants import TIME_BASIS
+from black_scholes import BlackScholes
 
 
 class LatticeModel(ABC):
 
-    def __init__(self, market, option, steps, pricing_date):
+    def __init__(self, market, option, steps, pricing_date, bs_smoothing = False):
         self.market = market
         self.option = option
         self.steps = steps
 
         self.start_date = pricing_date
+        self.bs_smoothing = bs_smoothing
 
-        
         self.dt = ((self.mty_date - self.start_date).total_seconds()/ (TIME_BASIS)/ self.steps)
         self.index_dt = (self.mty_date - self.start_date) / self.steps
         self.root = TrunkNode(self.S0, 0)
@@ -33,7 +35,12 @@ class LatticeModel(ABC):
     def _build_trunk(self):
         curr_trunk = self.root
 
-        for step in range(1,self.steps+1):
+        if self.bs_smoothing:
+            range_trunk = range(1,self.steps)
+        else:
+            range_trunk = range(1,self.steps+1)
+
+        for step in range_trunk:
             next_trunk = TrunkNode(None,step)
 
             next_trunk.prev_trunk = curr_trunk
@@ -58,10 +65,23 @@ class LatticeModel(ABC):
         trunk = self.last_trunk
         node = self._get_bottom_node(trunk)
 
-        while node is not None:
-            node.opt_price = self.option.payoff(node.underlying_price)
-            node = node.up_node
+        if self.bs_smoothing:
+            pricing_date = self.start_date + (self.steps-1)*self.index_dt
+            bs = BlackScholes(self.market, self.option)
 
+        while node is not None:
+
+            if self.bs_smoothing:
+                continuation = bs.vanilla_pricing(pricing_date, node.underlying_price)
+
+                if self.option.exercise_type == "american":
+                    node.opt_price = max(continuation, self.option.payoff(node.underlying_price))
+                else:
+                    node.opt_price = continuation
+
+            else:
+                node.opt_price = self.option.payoff(node.underlying_price)
+            node = node.up_node
 
         trunk = trunk.prev_trunk
         while trunk is not None:

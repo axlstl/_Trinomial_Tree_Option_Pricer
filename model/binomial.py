@@ -8,8 +8,8 @@ import numpy as np
 
 class BinomialModel(LatticeModel):
 
-    def __init__(self, market, option, steps, pricing_date):
-        super().__init__(market, option, steps, pricing_date)
+    def __init__(self, market, option, steps, pricing_date, bs_smoothing=False):
+        super().__init__(market, option, steps, pricing_date, bs_smoothing)
 
         if self.market.dividends:
             raise ValueError("no dividends allowed for binomial model")
@@ -139,156 +139,156 @@ class BinomialModel(LatticeModel):
             nodes = children
             step += 1
 
-    def export_svg(
-        self,
-        filename="tree.svg",
-        x_spacing=220,
-        graph_height=1400,
-        node_radius=6,
-    ):
+    # def export_svg(
+    #     self,
+    #     filename="tree.svg",
+    #     x_spacing=220,
+    #     graph_height=1400,
+    #     node_radius=6,
+    # ):
 
 
-        def get_bottom_node(trunk):
+    #     def get_bottom_node(trunk):
 
-            if trunk.step == 0:
-                return self.root_node
+    #         if trunk.step == 0:
+    #             return self.root_node
 
-            if hasattr(trunk, "bottom_node") and trunk.bottom_node is not None:
-                return trunk.bottom_node
+    #         if hasattr(trunk, "bottom_node") and trunk.bottom_node is not None:
+    #             return trunk.bottom_node
 
-            node = trunk.down_node
+    #         node = trunk.down_node
 
-            while node.down_node is not None:
-                node = node.down_node
+    #         while node.down_node is not None:
+    #             node = node.down_node
 
-            return node
+    #         return node
 
-        columns = []
+    #     columns = []
 
-        trunk = self.root
+    #     trunk = self.root
 
-        while trunk is not None:
+    #     while trunk is not None:
 
-            col_nodes = []
+    #         col_nodes = []
 
-            node = get_bottom_node(trunk)
+    #         node = get_bottom_node(trunk)
 
-            while node is not None:
-                col_nodes.append(node)
-                node = node.up_node
+    #         while node is not None:
+    #             col_nodes.append(node)
+    #             node = node.up_node
 
-            columns.append(col_nodes)
+    #         columns.append(col_nodes)
 
-            trunk = trunk.next_trunk
-
-
-        all_spots = []
-
-        for col in columns:
-            for node in col:
-                all_spots.append(node.underlying_price)
+    #         trunk = trunk.next_trunk
 
 
-        trunk = self.root
+    #     all_spots = []
 
-        while trunk is not None:
-            all_spots.append(trunk.forward)
-            trunk = trunk.next_trunk
-
-
-        s_min = min(all_spots)
-        s_max = max(all_spots)
+    #     for col in columns:
+    #         for node in col:
+    #             all_spots.append(node.underlying_price)
 
 
-        all_option_prices = []
+    #     trunk = self.root
 
-        for col in columns:
-            for node in col:
-
-                if node.opt_price is not None:
-                    all_option_prices.append(node.opt_price)
-
-        if all_option_prices:
-            v_max = max(all_option_prices)
-        else:
-            v_max = 0
+    #     while trunk is not None:
+    #         all_spots.append(trunk.forward)
+    #         trunk = trunk.next_trunk
 
 
-        margin_left = 180
-        margin_right = 180
-
-        margin_top = 150
-        margin_bottom = 150
-
-        width = (
-            margin_left
-            + margin_right
-            + (len(columns) - 1) * x_spacing
-        )
-
-        height = graph_height + margin_top + margin_bottom
+    #     s_min = min(all_spots)
+    #     s_max = max(all_spots)
 
 
-        def price_to_y(price):
+    #     all_option_prices = []
 
-            if abs(s_max - s_min) < 1e-14:
-                return height / 2
+    #     for col in columns:
+    #         for node in col:
 
-            relative_position = (
-                (price - s_min)
-                / (s_max - s_min)
-            )
+    #             if node.opt_price is not None:
+    #                 all_option_prices.append(node.opt_price)
 
-
-            return (
-                margin_top
-                + (1 - relative_position) * graph_height
-            )
+    #     if all_option_prices:
+    #         v_max = max(all_option_prices)
+    #     else:
+    #         v_max = 0
 
 
-        coords = {}
+    #     margin_left = 180
+    #     margin_right = 180
 
-        for step, col in enumerate(columns):
+    #     margin_top = 150
+    #     margin_bottom = 150
 
-            x = margin_left + step * x_spacing
+    #     width = (
+    #         margin_left
+    #         + margin_right
+    #         + (len(columns) - 1) * x_spacing
+    #     )
 
-            for node in col:
-
-                y = price_to_y(
-                    node.underlying_price
-                )
-
-                coords[node] = (x, y)
-
-
-    def option_price_to_color(option_price):
-
-        if option_price is None:
-            return "rgb(255,255,255)"
-
-        if v_max <= 0:
-            return "rgb(255,255,255)"
-
-        t = option_price / v_max
-        t = max(0.0, min(1.0, t))
+    #     height = graph_height + margin_top + margin_bottom
 
 
-        if t <= 0.5:
+    #     def price_to_y(price):
 
-            u = t / 0.5
+    #         if abs(s_max - s_min) < 1e-14:
+    #             return height / 2
 
-            r = int(0   + u * (255 - 0))
-            g = int(0   + u * (255 - 0))
-            b = int(255 + u * (255 - 255))
+    #         relative_position = (
+    #             (price - s_min)
+    #             / (s_max - s_min)
+    #         )
 
-        else:
 
-            u = (t - 0.5) / 0.5
+    #         return (
+    #             margin_top
+    #             + (1 - relative_position) * graph_height
+    #         )
 
-            r = 255
-            g = int(255 + u * (0 - 255))
-            b = int(255 + u * (0 - 255))
 
-        return f"rgb({r},{g},{b})"
+    #     coords = {}
+
+    #     for step, col in enumerate(columns):
+
+    #         x = margin_left + step * x_spacing
+
+    #         for node in col:
+
+    #             y = price_to_y(
+    #                 node.underlying_price
+    #             )
+
+    #             coords[node] = (x, y)
+
+
+    # def option_price_to_color(option_price):
+
+    #     if option_price is None:
+    #         return "rgb(255,255,255)"
+
+        # if v_max <= 0:
+        #     return "rgb(255,255,255)"
+
+        # t = option_price / v_max
+        # t = max(0.0, min(1.0, t))
+
+
+        # if t <= 0.5:
+
+        #     u = t / 0.5
+
+        #     r = int(0   + u * (255 - 0))
+        #     g = int(0   + u * (255 - 0))
+        #     b = int(255 + u * (255 - 255))
+
+        # else:
+
+        #     u = (t - 0.5) / 0.5
+
+        #     r = 255
+        #     g = int(255 + u * (0 - 255))
+        #     b = int(255 + u * (0 - 255))
+
+        # return f"rgb({r},{g},{b})"
 
 

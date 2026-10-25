@@ -8,8 +8,8 @@ from .lattice import LatticeModel
 
 
 class TrinomialModel(LatticeModel):
-    def __init__(self, market, option, steps, pricing_date, pruning_threshold=None):
-        super().__init__(market, option, steps, pricing_date)
+    def __init__(self, market, option, steps, pricing_date, pruning_threshold=None, bs_smoothing=False):
+        super().__init__(market, option, steps, pricing_date, bs_smoothing)
 
         self.pruning_threshold = pruning_threshold
 

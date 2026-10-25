@@ -62,3 +62,24 @@ if __name__=="__main__":
             node = node.up_node
 
         trunk = trunk.next_trunk
+
+
+        
+    # from black_scholes import BlackScholes
+
+    # # Test avec un seul pas
+    # model_classic = TrinomialModel(market_no_div, option, steps=1, pricing_date=pricing_date, pruning_threshold=pruning_threshold, bs_smoothing=False)
+    # model_bs = TrinomialModel(market_no_div, option, steps=1, pricing_date=pricing_date, pruning_threshold=pruning_threshold, bs_smoothing=True)
+
+    # price_classic = model_classic.price_from_tree()
+    # price_bs_tree = model_bs.price_from_tree()
+    # price_bs = BlackScholes(market_no_div, option).vanilla_pricing(pricing_date)
+
+    # print("\n--- TEST STEPS = 1 ---")
+    # print("Trinomial classique :", price_classic)
+    # print("Trinomial avec BS   :", price_bs_tree)
+    # print("Black-Scholes       :", price_bs)
+    # print("Erreur classique    :", abs(price_classic-price_bs))
+    # print("Erreur avec BS      :", abs(price_bs_tree-price_bs))
+
+    # assert abs(price_bs_tree-price_bs) < 1e-10

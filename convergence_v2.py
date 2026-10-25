@@ -1,0 +1,259 @@
+from datetime import datetime as dt, date, timedelta
+import copy
+import time
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+from market import Market
+from options import VanillaOption
+from model.binomial import BinomialModel
+from model.trinomial import TrinomialModel
+from black_scholes import BlackScholes
+
+
+class Convergence:
+    COLORS = {
+        "Binomial":"#2563eb",
+        "Trinomial": "#7c3aed",
+        "Binomial with smoothing": "#93b4f5",
+        "Trinomial with smoothing": "#c4a1fa",
+    }
+
+    def __init__(self, steps: int, model: BinomialModel, market: Market,
+                 option: VanillaOption, pricing_date,pruning_threshold=1e-7):
+        
+        self.steps = steps
+        self.model = model
+        self.market = market
+        self.option = option
+        self.pruning_threshold = pruning_threshold
+        self.pricing_date = pricing_date
+
+    @staticmethod
+    def _methods():
+        # list every configurations (model + w/o smoothing)
+        return [
+            ("Binomial", BinomialModel, False),
+            ("Trinomial", TrinomialModel, False),
+            ("Binomial with smoothing", BinomialModel, True),
+            ("Trinomial with smoothing", TrinomialModel, True)
+        ]
+    
+    def _tree_price(self, option, steps:int, model, get_times=False, bs_smoothing=False):
+        params = {"steps": int(steps), "pricing_date": self.pricing_date, "bs_smoothing": bs_smoothing}
+        if model is TrinomialModel:
+            params["pruning_threshold"] = self.pruning_threshold
+
+        start = time.perf_counter()
+        tree = model(self.market, option, **params)
+        pricing_start = time.perf_counter()
+        tree_price = tree.price_from_tree()
+
+        # time for pricing
+        pricing_time = time.perf_counter() - pricing_start
+
+        # time for pricing + bulding tree
+        running_time = time.perf_counter() - start
+
+        return (tree_price, pricing_time, running_time) if get_times else tree_price
+
+    def _bs_price(self, option):
+        return BlackScholes(self.market, option).vanilla_pricing(self.pricing_date)
+
+    def pricing_by_steps(self, steps_range):
+        bs_price = self._bs_price(self.option)
+        steps_range = sorted({int(n) for n in steps_range if int(n) >= 1})
+
+        rows = []
+        for step in steps_range:
+            for method, model, smoothing in self._methods():
+                tree_price, pricing_time, running_time = self._tree_price(
+                    self.option, step, model, get_times=True, bs_smoothing=smoothing
+                )
+                gap = tree_price - bs_price
+                rows.append({
+                    "N": step, "Method": method, "BS_smoothing": smoothing,
+                    "BS_price": bs_price, "Tree_price": tree_price,
+                    "Gap_abs": abs(gap), "Gap": gap,
+                    "Theoretical_gap": self.theoretical_gap(step) if method == "Binomial" and self._has_bs_reference() else np.nan,
+                    "Running_time": running_time, "Pricing_time": pricing_time,
+                    "Tunnel": gap * step,
+                })
+        return pd.DataFrame(rows)
+
+    def pricing_by_strike(self, strike_range, steps=10):
+        strikes = np.asarray(strike_range, dtype=float)
+        if len(strikes) < 2 or np.any(np.diff(strikes) <= 0):
+            raise ValueError("strike_range doit contenir au moins deux strikes strictement croissants")
+
+        rows = []
+        for strike in strikes:
+            option = copy.copy(self.option)
+            option.strike = float(strike)
+            bs_price = self._bs_price(option)
+
+            for method, model, smoothing in self._methods():
+                tree_price = self._tree_price(option, steps, model, bs_smoothing=smoothing)
+                rows.append({
+                    "K": strike, "Method": method, "BS_smoothing": smoothing,
+                    "BS": bs_price, "Tree": tree_price, "Gap": tree_price-bs_price,
+                })
+
+        prices = pd.DataFrame(rows)
+        for method, data in prices.groupby("Method", sort=False):
+            indices = data.index
+            prices.loc[indices, "Slope_BS"] = np.gradient(data["BS"].to_numpy(), data["K"].to_numpy())
+            prices.loc[indices, "Slope_Tree"] = np.gradient(data["Tree"].to_numpy(), data["K"].to_numpy())
+        return prices
+
+    def _has_bs_reference(self):
+        # check if it is an european pricing without dividends
+        return self.option.exercise_type.lower() == "european" and not getattr(self.market, "dividends", None)
+
+    def theoretical_gap(self, N):
+        S0 = self.market.S0
+        r = self.market.rf_rate
+        sigma = self.market.volatility
+        T = (self.option.mty_date-self.pricing_date).total_seconds()/(365*24*3600)
+        dt_step = T/N
+        return S0*np.exp(r*T)/(2*np.sqrt(2*np.pi))*sigma**2*dt_step/np.sqrt(np.exp(sigma**2*T)-1)
+
+    def _add_traces(self, fig, prices, x, y, mode="lines", showlegend=True):
+        for method, data in prices.groupby("Method", sort=False):
+            data = data.sort_values(x)
+            fig.add_trace(go.Scatter(
+                x=data[x], y=data[y], name=method, mode=mode,
+                legendgroup=method, showlegend=showlegend,
+                line=dict(color=self.COLORS[method]),
+            ))
+
+    @staticmethod
+    def _save(fig, filename, show=False):
+        fig.write_image(filename, width=1600, height=900, scale=2)
+
+        if show:
+            fig.show()
+
+    def plot_steps(self, prices, show=False):
+        fig_time = go.Figure()
+        fig_error = go.Figure()
+        for method, data in prices.groupby("Method", sort=False):
+            data = data.sort_values("N")
+            fig_time.add_trace(go.Scatter(
+                x=data["N"], y=data["Running_time"], mode="lines+markers", name=method,
+                line=dict(color=self.COLORS[method]),
+            ))
+            fig_error.add_trace(go.Scatter(
+                x=data["N"], y=data["Gap_abs"], mode="lines+markers", name=method,
+                line=dict(color=self.COLORS[method]),
+            ))
+
+        theory = prices[(prices["Method"] == "Binomial") & prices["Theoretical_gap"].notna()]
+        if not theory.empty:
+            fig_error.add_trace(go.Scatter(
+                x=theory["N"], y=theory["Theoretical_gap"], mode="lines",
+                name="Theoretical gap", line=dict(color="gray", dash="dash"),
+            ))
+
+        fig_time.update_layout(title="Running time by number of steps", xaxis_title="Number of steps N", yaxis_title="Seconds")
+        fig_error.update_layout(title="Absolute pricing errors", xaxis_title="Number of steps N", yaxis_title="Absolute error")
+        self.figure_background(fig_time)
+        self.figure_background(fig_error)
+        self._save(fig_time, "running_time.png", show)
+        self._save(fig_error, "gap_N.png", show)
+
+    def plot_convergence_order(self, prices, show=False):
+        fig_tunnel = go.Figure()
+        fig_order = go.Figure()
+        for method, data in prices.groupby("Method", sort=False):
+            data = data.sort_values("N")
+            fig_tunnel.add_trace(go.Scatter(
+                x=data["N"], y=data["Tunnel"], mode="lines+markers", name=method,
+                line=dict(color=self.COLORS[method]),
+            ))
+
+            data = data[(data["Gap_abs"] > 0) & (data["N"] > 1)].copy()
+            if len(data) < 2:
+                continue
+            data["log_N"] = np.log(data["N"])
+            data["log_Gap"] = np.log(data["Gap_abs"])
+            slope, intercept = np.polyfit(data["log_N"], data["log_Gap"], 1)
+            fig_order.add_trace(go.Scatter(
+                x=data["log_N"], y=data["log_Gap"], mode="lines+markers",
+                name=f"{method} (slope = {slope:.3f})", line=dict(color=self.COLORS[method]),
+            ))
+            fig_order.add_trace(go.Scatter(
+                x=data["log_N"], y=intercept+slope*data["log_N"], mode="lines",
+                showlegend=False, line=dict(color=self.COLORS[method], dash="dash"),
+            ))
+
+        fig_tunnel.add_hline(y=0, line_color="black", line_width=1)
+        fig_tunnel.update_xaxes(title_text="Number of steps N")
+        fig_tunnel.update_yaxes(title_text="(Tree price - BS price) × N")
+        fig_tunnel.update_layout(title="Signed scaled error: (Tree - BS) × N")
+        fig_order.update_layout(title="Convergence order (log-log)", xaxis_title="log(N)", yaxis_title="log(|Tree - BS|)")
+        self.figure_background(fig_tunnel)
+        self.figure_background(fig_order)
+        self._save(fig_tunnel, "tunnel_N.png", show)
+        self._save(fig_order, "convergence_order.png", show)
+
+    def plot_strikes(self, prices, show=False):
+        fig_price = go.Figure()
+        fig_gap = go.Figure()
+        fig_slope = go.Figure()
+
+        bs = prices.drop_duplicates(subset="K").sort_values("K")
+        fig_price.add_trace(go.Scatter(x=bs["K"], y=bs["BS"], name="Black-Scholes",
+                                       mode="lines", line=dict(color="black", width=2)))
+        self._add_traces(fig_price, prices, "K", "Tree")
+        self._add_traces(fig_gap, prices, "K", "Gap")
+        fig_gap.add_hline(y=0, line_color="black", line_width=1)
+
+        fig_slope.add_trace(go.Scatter(x=bs["K"], y=bs["Slope_BS"], name="Black-Scholes",
+                                       mode="lines", line=dict(color="black", width=2)))
+        self._add_traces(fig_slope, prices, "K", "Slope_Tree")
+
+        if not getattr(self.market, "dividends", None):
+            T = (self.option.mty_date-self.pricing_date).total_seconds()/(365*24*3600)
+            forward = self.market.S0*np.exp(self.market.rf_rate*T)
+            if bs["K"].min() <= forward <= bs["K"].max():
+                fig_price.add_vline(x=forward, line_dash="dot", line_color="gray",
+                                    annotation_text="Forward price", annotation_position="top right")
+
+        fig_price.update_layout(title="Option price by strike", xaxis_title="Strike K", yaxis_title="Price")
+        fig_gap.update_layout(title="Tree price - BS price", xaxis_title="Strike K", yaxis_title="Pricing error")
+        fig_slope.update_layout(title="Price slope by strike", xaxis_title="Strike K", yaxis_title="dPrice/dK")
+
+        for fig, filename in ((fig_price, "price_strike.png"), (fig_gap, "gap_strike.png"),
+                              (fig_slope, "slope_strike.png")):
+            self.figure_background(fig)
+            self._save(fig, filename, show)
+
+    @staticmethod
+    def figure_background(fig):
+        fig.update_layout(template="plotly_white", plot_bgcolor="white", paper_bgcolor="white",
+                          legend=dict(orientation="h", y=-0.2), margin=dict(l=70, r=30, t=70, b=95))
+        fig.update_xaxes(showgrid=True, gridcolor="lightgray", zeroline=False)
+        fig.update_yaxes(showgrid=True, gridcolor="lightgray", zeroline=False)
+
+
+if __name__ == "__main__":
+
+    pricing_date = dt.now()
+    maturity_date = pricing_date + timedelta(days=365)
+    market = Market(S0=100, rf_rate=0.05, volatility=0.2)
+    option = VanillaOption(strike=110, mty_date=maturity_date,
+                           option_type="call", exercise_type="european")
+
+    convergence = Convergence(500, BinomialModel, market, option, pricing_date)
+
+    steps_range = np.arange(2, 1001,20)
+    prices_N = convergence.pricing_by_steps(steps_range=steps_range)
+    convergence.plot_steps(prices_N)
+    convergence.plot_convergence_order(prices_N)
+
+    strike_range = np.linspace(80, 140, 121)
+    prices_K = convergence.pricing_by_strike(strike_range, steps=50)
+    convergence.plot_strikes(prices_K)
