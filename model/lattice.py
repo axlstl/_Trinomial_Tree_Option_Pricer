@@ -11,13 +11,14 @@ from black_scholes import BlackScholes
 
 class LatticeModel(ABC):
 
-    def __init__(self, market, option, steps, pricing_date, bs_smoothing = False):
+    def __init__(self, market, option, steps, pricing_date, bs_smoothing = False, pruning_threshold = None):
         self.market = market
         self.option = option
         self.steps = steps
 
         self.start_date = pricing_date
         self.bs_smoothing = bs_smoothing
+        self.pruning_threshold = pruning_threshold
 
         self.dt = ((self.mty_date - self.start_date).total_seconds()/ (TIME_BASIS)/ self.steps)
         self.index_dt = (self.mty_date - self.start_date) / self.steps
@@ -134,9 +135,28 @@ class LatticeModel(ABC):
     def _build_next_layer(self,trunk):
         pass
 
-    @abstractmethod
-    def _get_expected_value(self,node):
-        pass
+    def _should_prune(self, node):
+        return self.pruning_threshold is not None and node.cum_proba < self.pruning_threshold
+
+    def _set_transitions(self, node, *, up=None, mid=None, down=None,
+                         p_up=0.0, p_mid=0.0, p_down=0.0):
+        node.next_up, node.next_mid, node.next_down = up, mid, down
+        node.p_up, node.p_mid, node.p_down = p_up, p_mid, p_down
+
+        for child, probability in ((up, p_up), (mid, p_mid), (down, p_down)):
+            if child is not None:
+                child.cum_proba += node.cum_proba * probability
+
+    def _get_expected_value(self, node):
+        return sum(
+            probability * child.opt_price
+            for child, probability in (
+                (node.next_up, node.p_up),
+                (node.next_mid, node.p_mid),
+                (node.next_down, node.p_down),
+            )
+            if child is not None
+        )
 
     @property
     def mty_date(self):

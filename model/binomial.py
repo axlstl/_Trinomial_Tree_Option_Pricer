@@ -8,8 +8,8 @@ import numpy as np
 
 class BinomialModel(LatticeModel):
 
-    def __init__(self, market, option, steps, pricing_date, bs_smoothing=False):
-        super().__init__(market, option, steps, pricing_date, bs_smoothing)
+    def __init__(self, market, option, steps, pricing_date, bs_smoothing=False, pruning_threshold = None):
+        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold)
 
         if self.market.dividends:
             raise ValueError("no dividends allowed for binomial model")
@@ -20,10 +20,6 @@ class BinomialModel(LatticeModel):
 
         self._build_tree()
 
-
-    def _get_expected_value(self, node):
-        return self.p_up * node.next_up.opt_price + self.p_down * node.next_down.opt_price
-    
     def _compute_alpha(self):
         exp_sigma_dt = (1 + np.exp((self.volatility ** 2) * self.dt)) / 2
         return exp_sigma_dt + np.sqrt((exp_sigma_dt ** 2) - 1)
@@ -45,40 +41,40 @@ class BinomialModel(LatticeModel):
             
     def _build_next_layer(self, trunk):
         next_trunk = trunk.next_trunk
-
         step = next_trunk.step
+        children = {}
 
-        child = Node(next_trunk.forward * self.alpha**(-step), step)
-        child.up_count = 0
-        child.trunk_node = next_trunk
+        def get_child(up_count):
+            if up_count not in children:
+                child = Node(next_trunk.forward * self.alpha**(2 * up_count - step), step)
+                child.up_count = up_count
+                child.trunk_node = next_trunk
+                children[up_count] = child
+            return children[up_count]
 
-        bottom_node = child
         parent = self._get_bottom_node(trunk)
-
         while parent is not None:
-            parent.next_down = child
+            p_up, p_down = self.p_up, self.p_down
 
-            upper = Node(child.underlying_price * self.alpha**2, step)
-            upper.up_count = child.up_count + 1
-            upper.trunk_node = next_trunk
+            if self._should_prune(parent):
+                if 2 * parent.up_count < trunk.step:
+                    p_up, p_down = 1.0, 0.0
+                else:
+                    p_up, p_down = 0.0, 1.0
 
-            child.up_node = upper
-
-            upper.down_node = child
-            parent.next_up = upper
-            child = upper
-            
+            up = get_child(parent.up_count + 1) if p_up > 0 else None
+            down = get_child(parent.up_count) if p_down > 0 else None
+            self._set_transitions(parent, up=up, down=down, p_up=p_up, p_down=p_down)
             parent = parent.up_node
 
-        mid_node = bottom_node
-        for i in range(step // 2):
-            mid_node = mid_node.up_node
-        next_trunk.down_node = mid_node
+        nodes = [children[k] for k in sorted(children)]
+        for lower, upper in zip(nodes, nodes[1:]):
+            lower.up_node = upper
+            upper.down_node = lower
 
-        if step % 2 == 0:
-            next_trunk.mid_node = mid_node
-        else:
-            next_trunk.mid_node = mid_node.up_node
+        next_trunk.down_node = nodes[0]
+        next_trunk.up_node = nodes[-1]
+        next_trunk.mid_node = min(nodes, key=lambda node: abs(node.underlying_price - next_trunk.forward))
 
 
     def print_trunk(self):

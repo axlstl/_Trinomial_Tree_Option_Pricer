@@ -8,10 +8,8 @@ from .lattice import LatticeModel
 
 
 class TrinomialModel(LatticeModel):
-    def __init__(self, market, option, steps, pricing_date, pruning_threshold=None, bs_smoothing=False):
-        super().__init__(market, option, steps, pricing_date, bs_smoothing)
-
-        self.pruning_threshold = pruning_threshold
+    def __init__(self, market, option, steps, pricing_date, bs_smoothing=False,pruning_threshold=None):
+        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold)
 
         self._initialize_parameters()
         self._map_dividends()
@@ -127,14 +125,9 @@ class TrinomialModel(LatticeModel):
 
 
             #if the cumulative probability is below the pruning threshold, we only keep the next mid node 
-            if self.pruning_threshold is not None and curr_node.cum_proba < self.pruning_threshold:
-                curr_node.next_mid = next_mid_node
-
-                curr_node.p_up= 0
-                curr_node.p_mid = 1
-                curr_node.p_down =0
-
-                next_mid_node.cum_proba += curr_node.cum_proba
+            if self._should_prune(curr_node):
+                #here next_up or next_down is equivalent as pruning removes both lateral branches
+                self._set_transitions(curr_node, mid=next_mid_node, p_mid=1.0)
                 curr_node = curr_node.up_node
                 continue
             #we go from base probabilities and variance values to get the updated probabilities
@@ -149,21 +142,13 @@ class TrinomialModel(LatticeModel):
                     width += 1
                     p_up, p_mid, p_down = self._compute_probabilities(expected_value, variance, next_mid_node.underlying_price, self.alpha**width)
 
-            curr_node.next_up = next_mid_node
-            curr_node.next_mid = next_mid_node
-            curr_node.next_down = next_mid_node
+            next_up = next_down = next_mid_node
 
             for i in range(width):
-                curr_node.next_down = self._create_node(curr_node.next_down, -1)
-                curr_node.next_up = self._create_node(curr_node.next_up, 1)
-            curr_node.p_up, curr_node.p_mid, curr_node.p_down = p_up, p_mid, p_down
-            curr_node.next_up.cum_proba += curr_node.cum_proba * p_up
-            curr_node.next_mid.cum_proba += curr_node.cum_proba * p_mid
-            curr_node.next_down.cum_proba += curr_node.cum_proba * p_down
+                next_down = self._create_node(next_down, -1)
+                next_up = self._create_node(next_up, 1)
+            self._set_transitions(
+                curr_node, up=next_up, mid=next_mid_node, down=next_down,
+                p_up=p_up, p_mid=p_mid, p_down=p_down,
+            )
             curr_node = curr_node.up_node
-
-    def _get_expected_value(self, node):
-        #here next_up or next_down is equivalent as pruning removes both lateral branches
-        if node.next_up is None:
-            return node.next_mid.opt_price
-        return node.p_up * node.next_up.opt_price + node.p_mid * node.next_mid.opt_price + node.p_down * node.next_down.opt_price
