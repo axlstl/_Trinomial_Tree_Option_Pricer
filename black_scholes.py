@@ -1,32 +1,31 @@
 
 from market import Market
 from options import VanillaOption
-from datetime import datetime as dt
-from math import erfc, sqrt
+
 import numpy as np
+from math import erfc, sqrt
+from datetime import datetime as dt
 
-
-def norm_cdf(x):
+def norm_cdf(x:float) -> float:
     return 0.5 * erfc(-x / sqrt(2))
-
 
 class BlackScholes:
 
-    def __init__(self, market: Market, option: VanillaOption):
+    def __init__(self, market:Market, option:VanillaOption):
         self.market = market
         self.option = option
 
-    def vanilla_pricing(self, pricing_date=None, spot=None):
+    def vanilla_pricing(self, pricing_date: dt = None, spot: float = None) -> float:
         S = self.market.S0 if spot is None else spot
+        K = self.option.strike
         r = self.market.rf_rate
         sigma = self.market.volatility
 
-        K = self.option.strike
+        # pricing_date is useful to price option for nodes N-1
+        if pricing_date is None:
+            pricing_date = dt.now()
 
-        if pricing_date:
-            T = (self.option.mty_date-pricing_date).total_seconds()/(365*24*3600)
-        else:
-            T = (self.option.mty_date-dt.now()).total_seconds()/(365*24*3600)
+        T = (self.option.mty_date-pricing_date).total_seconds()/(365*24*3600)
 
         d1 = (np.log(S/K)+(r+sigma**2/2)*T)/(sigma*np.sqrt(T))
         d2 = d1-sigma*np.sqrt(T)

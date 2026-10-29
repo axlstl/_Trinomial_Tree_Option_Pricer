@@ -1,129 +1,8 @@
-# from datetime import datetime, timedelta
-# from copy import deepcopy
-
-# from market import Market, Dividend
-# from model.binomial import BinomialModel
-# from model.trinomial import TrinomialModel
-
-
-# class Greeks:
-#     def __init__(self, option, market: Market, model="trinomial", steps=1000, pricing_date=None):
-#         self.option = option
-#         self.market = market
-#         self.model_name = model.lower()
-#         self.steps = steps
-#         self.pricing_date = pricing_date or datetime.today()
-
-#         self.model = self._build_model(market, self.pricing_date)
-
-#     def _build_model(self, market: Market, pricing_date=None):
-#         pricing_date = pricing_date or self.pricing_date
-
-#         if self.model_name == "binomial":
-#             return BinomialModel(market, self.option, self.steps, pricing_date)
-
-#         if self.model_name == "trinomial":
-#             return TrinomialModel(market, self.option, self.steps, pricing_date)
-
-#     def _clone_market(self, *, spot=None, volatility=None, rf_rate=None):
-#         dividends = [Dividend(d.date, d.amount) for d in self.market.dividends]
-
-#         return Market(
-#             S0=self.market.S0 if spot is None else spot,
-#             rf_rate=self.market.rf_rate if rf_rate is None else rf_rate,
-#             volatility=self.market.volatility if volatility is None else volatility,
-#             dividends=dividends,
-#         )
-
-#     def _price(self, *, spot=None, volatility=None, rf_rate=None, pricing_date=None):
-#         market = self._clone_market(
-#             spot=self.market.S0 if spot is None else spot,
-#             volatility=self.market.volatility if volatility is None else volatility,
-#             rf_rate=self.market.rf_rate if rf_rate is None else rf_rate,
-#         )
-
-#         model = self._build_model(market, pricing_date)
-#         return model.price_from_tree()
-
-#     def delta(self, h=None):
-#         h = max(1e-5, self.market.S0 * 1e-4) if h is None else h
-#         s = self.market.S0
-
-#         spot_up = self._price(spot=s + h)
-#         spot_down = self._price(spot=s - h)
-
-#         return (spot_up - spot_down) / (2 * h)
-
-#     def gamma(self, h=None):
-#         h = max(1e-5, self.market.S0 * 1e-4) if h is None else h
-#         s = self.market.S0
-
-#         spot_up = self._price(spot=s + h)
-#         spot_0 = self._price(spot=s)
-#         spot_down = self._price(spot=s - h)
-
-#         return (spot_up - 2 * spot_0 + spot_down) / (h ** 2)
-
-#     def vega(self, dv=1e-4):
-#         sigma = self.market.volatility
-
-#         v_up = self._price(volatility=sigma + dv)
-#         v_down = self._price(volatility=sigma - dv)
-
-#         return (v_up - v_down) / (2 * dv)
-
-#     def theta(self, dt_days=1):
-#         dt = dt_days / 365
-
-#         t_minus = self._price(pricing_date=self.pricing_date - timedelta(days=dt_days))
-#         t_plus = self._price(pricing_date=self.pricing_date + timedelta(days=dt_days))
-
-#         return (t_minus - t_plus) / (2 * dt)
-
-#     def rho(self, dr=1e-4):
-#         r = self.market.rf_rate
-
-#         r_up = self._price(rf_rate=r + dr)
-#         r_down = self._price(rf_rate=r - dr)
-
-#         return (r_up - r_down) / (2 * dr)
-
-#     def vanna(self, h=None, dv=1e-4):
-#         h = max(1e-5, self.market.S0 * 1e-4) if h is None else h
-#         sigma = self.market.volatility
-
-#         def delta_at_vol(vol):
-#             s = self.market.S0
-#             v_up = self._price(spot=s + h, volatility=vol)
-#             v_down = self._price(spot=s - h, volatility=vol)
-#             return (v_up - v_down) / (2 * h)
-
-#         delta_up = delta_at_vol(sigma + dv)
-#         delta_down = delta_at_vol(sigma - dv)
-
-#         return (delta_up - delta_down) / (2 * dv)
-
-#     def volga(self, h=None, dv=1e-4):
-#         h = max(1e-5, self.market.S0 * 1e-4) if h is None else h
-#         sigma = self.market.volatility
-
-#         def gamma_at_vol(vol):
-#             s = self.market.S0
-#             v_up = self._price(spot=s + h, volatility=vol)
-#             v_0 = self._price(spot=s, volatility=vol)
-#             v_down = self._price(spot=s - h, volatility=vol)
-#             return (v_up - 2 * v_0 + v_down) / (h ** 2)
-
-#         gamma_up = gamma_at_vol(sigma + dv)
-#         gamma_down = gamma_at_vol(sigma - dv)
-
-#         return (gamma_up - gamma_down) / (2 * dv)
-
 from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta
-
+from options import VanillaOption
 
 class OneDimDerivative:
     def __init__(self, function, shift):
@@ -173,7 +52,7 @@ class Greeks:
         return model.price_from_tree()
 
     def delta(self, h=None):
-        h = max(1e-5, self.market.S0 * 0.0025) if h is None else h
+        h = max(1e-5, self.market.S0 * 0.01) if h is None else h
         derivative = OneDimDerivative(lambda s: self._price(S0=s), shift=h)
         return derivative.first(self.market.S0)
 
@@ -183,7 +62,7 @@ class Greeks:
         return derivative.second(self.market.S0)
 
     def vega(self, dv=None):
-        dv = max(1e-5, abs(self.market.volatility) * 1e-4) if dv is None else dv
+        dv = max(1e-5, 0.01) if dv is None else dv
         derivative = OneDimDerivative(lambda sigma: self._price(volatility=sigma), shift=dv)
         return derivative.first(self.market.volatility)/100
 
@@ -208,8 +87,8 @@ class Greeks:
         return derivative.first(0) / 365.0
 
     def vanna(self, h=None, dv=None):
-        h = max(1e-5, self.market.S0 * 1e-4) if h is None else h
-        dv = max(1e-5, abs(self.market.volatility) * 1e-4) if dv is None else dv
+        h = max(1e-5, self.market.S0 * 0.01) if h is None else h
+        dv = max(1e-5, 0.01) if dv is None else dv
 
         def delta_for_sigma(sigma):
             derivative = OneDimDerivative(
@@ -219,15 +98,14 @@ class Greeks:
             return derivative.first(self.market.S0)
 
         derivative = OneDimDerivative(delta_for_sigma, shift=dv)
-        return derivative.first(self.market.volatility)
+        return derivative.first(self.market.volatility)/100
 
-def volga(self, dv=0.001):
-    derivative = OneDimDerivative(
-        lambda sigma: self._price(volatility=sigma),
-        shift=dv
-    )
-    return derivative.second(self.market.volatility)
-
+    def volga(self, dv=0.01):
+        derivative = OneDimDerivative(
+            lambda sigma: self._price(volatility=sigma),
+            shift=dv
+        )
+        return derivative.second(self.market.volatility)/10000
 
 
 from datetime import datetime
@@ -239,35 +117,43 @@ from greeks import Greeks
 
 if __name__ == "__main__":
 
-    # Données du prof
     market = Market(
-        S0=100.0,
-        rf_rate=0.03,
-        volatility=0.30,
-        dividends=[
-            Dividend(date=datetime(2027, 4, 21), amount=4.0)
-        ]
+        S0=101.15,
+        rf_rate=0.038,
+        volatility=0.26,
+        # dividends=[
+        #     Dividend(date=datetime(2027, 6, 9), amount=2.9)
+        # ]
     )
 
     option = VanillaOption(
-        strike=100.0,
-        option_type="call",
+        strike=116.2,
+        option_type="put",
         exercise_type="american",
-        mty_date=datetime(2027, 6, 28)
+        mty_date=datetime(2027, 8, 27)
     )
 
-    pricing_date = datetime(2026, 9, 1)
+    pricing_date = datetime(2026, 10, 29)
 
     greeks = Greeks(
         option=option,
         market=market,
-        model="trinomial",
+        model="binomial",
         steps=300,
         pricing_date=pricing_date
     )
 
-    price = greeks._price(S0=100.0, volatility=0.30, rf_rate=0.03)
+    price = greeks._price(S0=101.15, volatility=0.26, rf_rate=0.038)
     print(f"prix = {price:.3f}")
 
-    delta = greeks.delta()
-    gamma = greeks.gamma()
+    #delta = greeks.delta()
+    #print(delta)
+    # gamma = greeks.gamma()
+    vega = greeks.vega()
+    # vanna = greeks.vanna()
+    # volga = greeks.volga()
+    
+    # print(gamma)
+    print(vega)
+    # print(vanna)
+    # print(volga)

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from datetime import datetime as dt
 
 class Option(ABC):
 
@@ -10,7 +10,7 @@ class Option(ABC):
 
 class VanillaOption(Option):
 
-    def __init__(self, strike, option_type, exercise_type,mty_date):
+    def __init__(self, strike:float, option_type:str, exercise_type:str, mty_date:dt):
         
         self.strike = strike
 
@@ -19,8 +19,21 @@ class VanillaOption(Option):
 
         self.mty_date = mty_date
 
-    def payoff(self, spot):
+    def payoff(self, spot:float) -> float:
         if self.option_type == "call":
             return max(spot - self.strike, 0)
         elif self.option_type == "put":
             return max(self.strike - spot, 0)
+
+class DigitalOption(Option):
+
+    def __init__(self, strike:float, option_type:str, exercise_type:str, mty_date:dt, coupon:float = 1):
+        super().__init__(strike, option_type, exercise_type, mty_date)
+
+        self.coupon = coupon
+
+    def payoff(self, spot:float) -> float:
+        if self.option_type == "call":
+            return self.coupon if spot > self.strike else 0
+        elif self.option_type == "put":
+            return self.coupon if spot < self.strike else 0

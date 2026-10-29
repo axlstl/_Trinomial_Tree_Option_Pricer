@@ -39,32 +39,9 @@ if __name__=="__main__":
     print("Sans dividende :",model_no_div.price_from_tree())
     print("Avec dividende :",model_div.price_from_tree())
 
-    print("SVG sans dividende :",export_svg(model_no_div,Path(__file__).with_name("tree_no_div.svg")))
-    print("SVG avec dividende :",export_svg(model_div,Path(__file__).with_name("tree_div.svg")))
+    # print("SVG sans dividende :",export_svg(model_no_div,Path(__file__).with_name("tree_no_div.svg")))
+    # print("SVG avec dividende :",export_svg(model_div,Path(__file__).with_name("tree_div.svg")))
 
-
-    trunk = model_div.root
-
-    while trunk is not None:
-        node = model_div._get_bottom_node(trunk)
-
-        while node is not None:
-            if node.p_up is not None:
-                total = node.p_up+node.p_mid+node.p_down
-
-                if node.p_up < 0 or node.p_mid < 0 or node.p_down < 0 or abs(total-1) > 1e-10:
-                    print("PROBLEME")
-                    print("step :",trunk.step)
-                    print("spot :",node.underlying_price)
-                    print("p :",node.p_up,node.p_mid,node.p_down)
-                    print("sum :",total)
-
-            node = node.up_node
-
-        trunk = trunk.next_trunk
-
-
-        
     # from black_scholes import BlackScholes
 
     # # Test avec un seul pas
