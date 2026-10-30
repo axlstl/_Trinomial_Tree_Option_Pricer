@@ -3,17 +3,17 @@ from pathlib import Path
 
 
 from model.trinomial import TrinomialModel
-from options import VanillaOption
-from market import Market
-from model.binomial import BinomialModel
+from data.options import VanillaOption
+from data.market import Market
+from src.constants import DEFAULT_PRUNING_THRESHOLD, DEFAULT_STEPS
 from svg.export_svg import export_svg
 
 
 if __name__=="__main__":
     from datetime import datetime,timedelta
 
-    from market import Market,Dividend
-    from options import VanillaOption
+    from data.market import Market,Dividend
+    from data.options import VanillaOption
     from model.trinomial import TrinomialModel
     #all params
     pricing_date = datetime.now().date()
@@ -29,12 +29,13 @@ if __name__=="__main__":
     market_no_div = Market(**market_params)
     market_div = Market(**market_params,dividends=[dividend])
 
-    pruning_threshold = 1e-7
-    nb_steps = 50
+    pruning_threshold = DEFAULT_PRUNING_THRESHOLD
+    nb_steps = DEFAULT_STEPS
 
     model_div = TrinomialModel(market_div,option,steps=nb_steps,pricing_date=pricing_date,pruning_threshold=pruning_threshold)
 
     print("Prix de l'option avec dividende :",model_div.price_from_tree())
 
-    path_svg = Path(__file__).parent / "tree_div.svg"
+    path_svg = Path(__file__).resolve().parents[1] / "outputs" / "svg" / "tree_div.svg"
+    path_svg.parent.mkdir(parents=True, exist_ok=True)
     print("SVG avec dividende :",export_svg(model_div,path_svg))

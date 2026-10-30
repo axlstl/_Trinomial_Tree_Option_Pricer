@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from market import Market
-from options import Option, VanillaOption, DigitalOption
+from data.market import Market
+from data.options import Option, VanillaOption, DigitalOption
 from model.binomial import BinomialModel
 from model.trinomial import TrinomialModel
 from model.lattice import LatticeModel
-from black_scholes import BlackScholes
+from convergence.black_scholes import BlackScholes
 
 
 class Convergence:

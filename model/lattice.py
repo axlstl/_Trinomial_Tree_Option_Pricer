@@ -4,11 +4,12 @@ from math import isclose
 
 import numpy as np
 
-from market import Market
-from options import Option
-from node import Node, TrunkNode
-from constants import TIME_BASIS
-from black_scholes import BlackScholes
+from greeks.greeks import Greeks
+from data.market import Market
+from data.options import Option
+from model.node import Node, TrunkNode
+from src.constants import TIME_BASIS
+from convergence.black_scholes import BlackScholes
 
 
 class LatticeModel(ABC):
@@ -34,6 +35,8 @@ class LatticeModel(ABC):
         self.p_up = None
         self.p_mid = None
         self.p_down = None
+
+        self.greeks = Greeks(self)
 
     @property
     def mty_date(self) -> dt:
@@ -67,8 +70,13 @@ class LatticeModel(ABC):
 
         self.last_trunk = curr_trunk
 
+    def set_greeks(self, method : str = "ClassicGreeks") -> None:
+        """This function is made just in case we would like to implement other methods for computing greeks."""
+        if method == "ClassicGreeks":
+            self.greeks = Greeks(self)
+
     def update_tree(self) -> None:
-        
+
         self.dt = ((self.mty_date - self.start_date).total_seconds() / TIME_BASIS) / self.steps
         self.index_dt = (self.mty_date - self.start_date) / self.steps
 

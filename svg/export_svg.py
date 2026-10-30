@@ -1,21 +1,25 @@
 from pathlib import Path
-from platform import node
 from xml.etree.ElementTree import Element
 
 from model.lattice import LatticeModel
 
-from node import Node, TrunkNode
+from model.node import Node, TrunkNode
 from svg.svg_document import SvgDocument
+from src.constants import (
+    SVG_BOTTOM_MARGIN,
+    SVG_DIVIDEND_OFFSET,
+    SVG_EXERCISE_RING_OFFSET,
+    SVG_NODE_COUNT_EVERY,
+    SVG_NODE_COUNT_OFFSET,
+    SVG_NODE_RADIUS,
+    SVG_SIDE_MARGIN,
+    SVG_TOP_MARGIN,
+    SVG_X_SPACING,
+    SVG_Y_SPACING,
+)
 
 
-SIDE_MARGIN = 80
-TOP_MARGIN = 20
-BOTTOM_MARGIN = 60
 STYLESHEET = Path(__file__).with_name("tree_style.css")
-
-X_SPACING = 50
-Y_SPACING = 10
-NODE_RADIUS = 5
 
 def export_svg(model: LatticeModel, filename: str | Path = "tree.svg") -> Path:
 
@@ -25,7 +29,7 @@ def export_svg(model: LatticeModel, filename: str | Path = "tree.svg") -> Path:
     if isinstance(filename, str):
         filename = Path(filename)
 
-    drawing = TreeSvg(model)
+    drawing = TreeSvg(model) #class in charge of drawing the tree
     return drawing.write(filename)
 
 
@@ -35,9 +39,9 @@ class TreeSvg:
     """
     def __init__(self, model: LatticeModel) -> None:
         self.model = model
-        self.x_spacing = X_SPACING
-        self.y_spacing = Y_SPACING
-        self.node_radius = NODE_RADIUS
+        self.x_spacing = SVG_X_SPACING
+        self.y_spacing = SVG_Y_SPACING
+        self.node_radius = SVG_NODE_RADIUS
 
     def write(self, filename: Path) -> Path:
         """Main function for exporting the svg tree. It will successively :
@@ -89,7 +93,7 @@ class TreeSvg:
             To do so, it uses the previous columns list built in _retrieve_nodes_from_tree()
             For each node :
                 x is calculated from the time step and the x_spacing (representing the horizontal distance between two nodes)
-                y is calculated from its relative value to the initial price (a 1% change from S0 is equal to Y_SPACING pixels of vertical distance)
+                y is calculated from its relative value to the initial price (a 1% change from S0 is equal to SVG_Y_SPACING pixels of vertical distance)
             We also take into account the top and bottom margins for each calculation
         """
 
@@ -98,27 +102,27 @@ class TreeSvg:
         for _, nodes in self.columns:
             for node in nodes:
 
-                x = SIDE_MARGIN + node.step * self.x_spacing
+                x = SVG_SIDE_MARGIN + node.step * self.x_spacing
                 change = 100 * (node.underlying_price / self.model.S0 - 1)
                 self.positions[node] = (x, -change * self.y_spacing)
 
         top = min(y for x, y in self.positions.values())
         bottom = max(y for x, y in self.positions.values())
 
-        self.width = 2 * SIDE_MARGIN + self.model.steps * self.x_spacing
-        self.height = TOP_MARGIN + bottom - top + BOTTOM_MARGIN
+        self.width = 2 * SVG_SIDE_MARGIN + self.model.steps * self.x_spacing
+        self.height = SVG_TOP_MARGIN + bottom - top + SVG_BOTTOM_MARGIN
         # Move the whole drawing inside the page without changing the scale.
         for node, (x, y) in self.positions.items():
-            self.positions[node] = (x, TOP_MARGIN + y - top)
+            self.positions[node] = (x, SVG_TOP_MARGIN + y - top)
 
 
 
 
     def _draw_columns(self) -> None:
         for trunk, nodes in self.columns:
-            x = SIDE_MARGIN + trunk.step * self.x_spacing
+            x = SVG_SIDE_MARGIN + trunk.step * self.x_spacing
             # Draw a vertical line at each time step.
-            self.svg.line(self.svg.root, (x, TOP_MARGIN), (x, self.height - BOTTOM_MARGIN), "grid")
+            self.svg.line(self.svg.root, (x, SVG_TOP_MARGIN), (x, self.height - SVG_BOTTOM_MARGIN), "grid")
             self._draw_column_labels(trunk, nodes, x)
 
     def _draw_column_labels(self, trunk: TrunkNode, nodes: list[Node], x: float) -> None:
@@ -129,13 +133,13 @@ class TreeSvg:
             x (float): The x coordinate of the corresponding node column in the svg document 
         """
         # 1. We display the number of nodes every 5 layers and on the last one
-        if trunk.step % 5 == 0 or trunk.next_trunk is None:
-            self.svg.text((x, self.height - 35), f"{len(nodes)} nœuds", anchor="middle")
+        if trunk.step % SVG_NODE_COUNT_EVERY == 0 or trunk.next_trunk is None:
+            self.svg.text((x, self.height - SVG_NODE_COUNT_OFFSET), f"{len(nodes)} nœuds", anchor="middle")
         # 2. If theres a dividend, we also display the amount
         dividends = self.model.dividends_by_step.get(trunk.step, [])
         if dividends:
             amount = sum(dividend.amount for dividend in dividends)
-            self.svg.text((x, self.height - 15), f"Div. {amount:g}", anchor="middle")
+            self.svg.text((x, self.height - SVG_DIVIDEND_OFFSET), f"Div. {amount:g}", anchor="middle")
 
     def _draw_branches(self) -> None:
         """This function is in charge of drawing the lines between the nodes
@@ -164,7 +168,7 @@ class TreeSvg:
             style = "maturity"
         # Add a larger red circle if early exercise is optimal at this node.
         if self.model.option.exercise_type == "american" and node.exercise_now:
-            self.svg.circle(group, position, self.node_radius + 3, "exercise")
+            self.svg.circle(group, position, self.node_radius + SVG_EXERCISE_RING_OFFSET, "exercise")
         # Draw the point and add the values displayed when hovering over it.
         label = self._node_label(node)
         self.svg.circle(group, position, self.node_radius, "node " + style, label)

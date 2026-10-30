@@ -3,10 +3,10 @@ from collections import defaultdict
 import numpy as np
 from datetime import datetime as dt
 
-from market import Market
-from options import Option
-from node import Node, TrunkNode
-from constants import TIME_BASIS
+from data.market import Market
+from data.options import Option
+from model.node import Node, TrunkNode
+from src.constants import TIME_BASIS
 from .lattice import LatticeModel
 
 class TrinomialModel(LatticeModel):
@@ -22,7 +22,7 @@ class TrinomialModel(LatticeModel):
         self._build_trunk_forwards()
         self._build_tree()
 
-    def _update_tree(self) -> None:
+    def update_tree(self) -> None:
         self._map_dividends()
         super().update_tree()
 

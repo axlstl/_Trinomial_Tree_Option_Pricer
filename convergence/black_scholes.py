@@ -1,6 +1,7 @@
 
-from market import Market
-from options import VanillaOption
+from data.market import Market
+from data.options import VanillaOption
+from src.constants import TIME_BASIS
 
 import numpy as np
 from math import erfc, sqrt
@@ -25,7 +26,7 @@ class BlackScholes:
         if pricing_date is None:
             pricing_date = dt.now()
 
-        T = (self.option.mty_date-pricing_date).total_seconds()/(365*24*3600)
+        T = (self.option.mty_date-pricing_date).total_seconds() / TIME_BASIS
 
         d1 = (np.log(S/K)+(r+sigma**2/2)*T)/(sigma*np.sqrt(T))
         d2 = d1-sigma*np.sqrt(T)

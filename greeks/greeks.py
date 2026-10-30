@@ -1,215 +1,147 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from datetime import datetime, timedelta
-from calibrate_h import HCalibration
-from model.lattice import LatticeModel
-from options import VanillaOption
+from collections.abc import Callable
+from copy import copy
+from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
 
-class OneDimDerivative:
-    def __init__(self, function):
-        self.function = function
+from src.constants import (
+    DEFAULT_RELATIVE_GREEK_STEP,
+    DEFAULT_THETA_DAYS,
+    DEFAULT_VOLATILITY_STEP,
+    GREEKS,
+)
+from .calibrate_h import HCalibration
+from .derivatives import OneDimDerivative, TwoDimDerivative
 
+if TYPE_CHECKING:
+    from model.lattice import LatticeModel
 
-    def first(self, x, h):
-        up_price = self.function(x+h)
-        down_price = self.function(x-h)
-        return (up_price - down_price) / (2 * h)
-
-    def second(self, x, h):
-
-        up_price = self.function(x+h)
-        down_price = self.function(x-h)
-        mid_price = self.function(x)
-
-        return (up_price - 2 * mid_price + down_price) / (h**2)
-
-class TwoDimDerivative:
-    def __init__(self, function):
-        self.function = function
-
-    def second(self, x, y, h, k = None):
-        if k is None:
-            k = h
-        
-        up_up = self.function(x + h, y + k)
-        up_down = self.function(x + h, y - k)
-        down_up = self.function(x - h, y + k)
-        down_down = self.function(x - h, y - k)
-
-        return (up_up - up_down - down_up + down_down) / (4 * h * k)
-
+PricingArg = int | float | date | datetime
 
 class Greeks:
     def __init__(self, model: LatticeModel) -> None:
         self.model = model
-
-        self.one_dim = OneDimDerivative(self._price)
-        self.two_dim = TwoDimDerivative(self._price)
         self.h_calibration = HCalibration(self)
 
+    def _build_dict_inputs(self, name: str, *values: PricingArg) -> dict:
+        dict_pricing_inputs = {}
 
-    def set_model(self, model):
-        self.model_name = model.lower()
+        #Here we build a dictionary of the inputs to be changed in the model
+        #Usually, there should be only one input to change, but for vanna we have two inputs to change
+        #We could also imagine an nD greek
+        for path, value in zip(GREEKS[name]["inputs"], values):
+            keys = path.split(".")
+            target = dict_pricing_inputs
 
-    def _build_model(self, market):
-        if self.model_name == "binomial":
-            from model.binomial import BinomialModel
-            return BinomialModel(market, self.option, self.steps, self.pricing_date)
+            for key in keys[:-1]:
+                target = target.setdefault(key, {})
 
-        if self.model_name == "trinomial":
-            from model.trinomial import TrinomialModel
-            return TrinomialModel(market, self.option, self.steps, self.pricing_date, pruning_threshold = 1e-7)
+            target[keys[-1]] = value
 
-        raise ValueError(f"Unknown model '{self.model_name}'. Use 'binomial' or 'trinomial'.")
-
-
+        return dict_pricing_inputs
 
     def _price(self, dict_pricing_inputs: dict) -> float:
-        """Function used to get the price variation after shifting the parameters by h or 1+h
-            First, it iterates thourgh the dictionary of parameters and updates it
-            Then it updates the tree and computes the new price
-            The typical size of the dictionary is 1 (for OneDimDerivatives) or 2 (for TwoDimDerivatives such as vomma)
+        """Returns the option price after modifying the model's inputs.
         Args:
-            dict_pricing_inputs (dict): Dictionary containing the parameters to update.
-                Nested dictionaries specify attributes of sub-objects.
-                Other entries specify attributes of the model directly.
-
+            dict_pricing_inputs (dict): Sub-object attributes or model attributes to update.
                 ```python
-                dict_pricing_inputs = {
-                    "market": {"spot": 105}, #Delta or gamma
-                    "market": {"volatility": 0.31}, #Vega
-                    "start_date": new_date #Theta
-                }
+                {"market": {"S0": 105, "volatility": 0.31}}  # Vanna
                 ```
-
         Returns:
-            float: option price after shifting the parameters' value
+            float: Option price with the updated inputs.
         """
-        model_copy = deepcopy(self.model)
-
-        
+        model_copy = copy(self.model)
+        # Here we copy the model and update its attributes with the values provided in dict_pricing_inputs.
+        # This allows us to compute the option price with the updated inputs without modifying the original model.
         for attribute, value in dict_pricing_inputs.items():
             if isinstance(value, dict):
-                #If the value is a dictionary, it means we have to update an attribute of a sub-object
-                #The only normal case in which we dont have a dictionary is for theta (start_date)
-                #But we could imagine a case where we want to compute the derivative with respect to the strike or the number of steps of the model
-                target = deepcopy(getattr(model_copy, attribute))
-
+                target = copy(getattr(model_copy, attribute))
                 for var_to_change, new_val in value.items():
                     setattr(target, var_to_change, new_val)
-
                 setattr(model_copy, attribute, target)
             else:
                 setattr(model_copy, attribute, value)
-
         model_copy.update_tree()
         return model_copy.price_from_tree()
-    
 
-    def delta(self, h=None):
-        h = max(1e-5, self.market.S0 * 0.01) if h is None else h
-        derivative = OneDimDerivative(lambda s: self._price(S0=s), shift=h)
-        return derivative.first(self.market.S0)
+    def _build_price_function(self, name: str) -> Callable[..., float]:
+        """generalistic pricing function for any greek"""
+        def price(*values: PricingArg) -> float:
+            dict_pricing_inputs = self._build_dict_inputs(name, *values)
+            return self._price(dict_pricing_inputs)
 
-    def gamma(self, h=None):
-        h = max(1e-5, self.market.S0 * 0.01) if h is None else h
-        derivative = OneDimDerivative(lambda s: self._price(S0=s), shift=h)
-        return derivative.second(self.market.S0)
+        return price
 
-    def vega(self, dv=None):
-        dv = max(1e-5, 0.01) if dv is None else dv
-        derivative = OneDimDerivative(lambda sigma: self._price(volatility=sigma), shift=dv)
-        return derivative.first(self.market.volatility)/100
+    def delta(self, h: float | None = None) -> float:
+        if h is None:
+            h = self.h_calibration.calibrated_h["delta"]
+        if h is None:
+            h = DEFAULT_RELATIVE_GREEK_STEP * self.model.S0
 
-    def rho(self, dr=None):
-        dr = max(1e-5, abs(self.market.rf_rate) * 1e-4) if dr is None else dr
-        derivative = OneDimDerivative(lambda r: self._price(rf_rate=r), shift=dr)
-        return derivative.first(self.market.rf_rate)
+        result = OneDimDerivative(self._build_price_function("delta")).first(self.model.market.S0, h)
+        return result / GREEKS["delta"]["divisor"]
 
-    def theta(self, dt_days=1):
+    def gamma(self, h: float | None = None) -> float:
+        if h is None:
+            h = self.h_calibration.calibrated_h["gamma"]
+        if h is None:
+            h = DEFAULT_RELATIVE_GREEK_STEP * self.model.S0
 
-        def price_with_shift(days):
-            option_copy = deepcopy(self.option)
-            option_copy.mty_date = self.option.mty_date + timedelta(days=days)
+        result = OneDimDerivative(self._build_price_function("gamma")).second(self.model.market.S0, h)
+        return result / GREEKS["gamma"]["divisor"]
 
-            market_copy = deepcopy(self.market)
+    def vega(self, h: float | None = None) -> float:
+        if h is None:
+            h = self.h_calibration.calibrated_h["vega"]
+        if h is None:
+            h = DEFAULT_VOLATILITY_STEP
+        #
+        result = OneDimDerivative(self._build_price_function("vega")).first(self.model.market.volatility, h)
+        return result / GREEKS["vega"]["divisor"]
 
-            model = self._build_model(market_copy)
-            model.option = option_copy
-            return model.price_from_tree()
+    def rho(self, h: float | None = None) -> float:
+        if h is None:
+            h = self.h_calibration.calibrated_h["rho"]
+        if h is None:
+            h = DEFAULT_RELATIVE_GREEK_STEP * abs(self.model.rf_rate)
 
-        derivative = OneDimDerivative(price_with_shift, shift=dt_days)
-        return derivative.first(0) / 365.0
+        result = OneDimDerivative(self._build_price_function("rho")).first(self.model.market.rf_rate, h)
+        return result / GREEKS["rho"]["divisor"]
 
-    def vanna(self, h=None, dv=None):
-        h = max(1e-5, self.market.S0 * 0.01) if h is None else h
-        dv = max(1e-5, 0.01) if dv is None else dv
+    def theta(self, dt_days: int | None = None) -> float:
+        if dt_days is None:
+            dt_days = self.h_calibration.calibrated_h["theta"]
+        if dt_days is None:
+            dt_days = DEFAULT_THETA_DAYS
+        #as we are using the time derivative the function we use has to be tweaked
+        def price_after_days(days: float) -> float:
+            new_date = self.model.start_date + timedelta(days=days)
+            return self._price(self._build_dict_inputs("theta", new_date))
 
-        def delta_for_sigma(sigma):
-            derivative = OneDimDerivative(
-                lambda s: self._price(S0=s, volatility=sigma),
-                shift=h,
-            )
-            return derivative.first(self.market.S0)
+        result = OneDimDerivative(price_after_days).first(0, dt_days)
+        return result / GREEKS["theta"]["divisor"]
 
-        derivative = OneDimDerivative(delta_for_sigma, shift=dv)
-        return derivative.first(self.market.volatility)/100
+    def vanna(self, h: float | None = None, dv: float | None = None) -> float:
+        if h is None:
+            h = self.h_calibration.calibrated_h["vanna"]["h"]
+        if dv is None:
+            dv = self.h_calibration.calibrated_h["vanna"]["dv"]
+        if h is None:
+            h = DEFAULT_RELATIVE_GREEK_STEP * self.model.S0
+        if dv is None:
+            dv = DEFAULT_VOLATILITY_STEP
 
-    def volga(self, dv=0.01):
-        derivative = OneDimDerivative(
-            lambda sigma: self._price(volatility=sigma),
-            shift=dv
-        )
-        return derivative.second(self.market.volatility)/10000
+        result = TwoDimDerivative(self._build_price_function("vanna")).second(
+            self.model.market.S0, self.model.market.volatility, h, dv)
+        return result / GREEKS["vanna"]["divisor"]
 
+    def volga(self, h: float | None = None) -> float:
+        #
+        if h is None:
+            h = self.h_calibration.calibrated_h["volga"]
+        if h is None:
+            h = DEFAULT_VOLATILITY_STEP
 
-from datetime import datetime
-
-from market import Market, Dividend
-from options import VanillaOption
-from greeks.greeks import Greeks
-
-
-if __name__ == "__main__":
-
-    market = Market(
-        S0=101.15,
-        rf_rate=0.038,
-        volatility=0.26,
-        # dividends=[
-        #     Dividend(date=datetime(2027, 6, 9), amount=2.9)
-        # ]
-    )
-
-    option = VanillaOption(
-        strike=116.2,
-        option_type="put",
-        exercise_type="american",
-        mty_date=datetime(2027, 8, 27)
-    )
-
-    pricing_date = datetime(2026, 10, 29)
-
-    greeks = Greeks(
-        option=option,
-        market=market,
-        model="trinomial",
-        steps=300,
-        pricing_date=pricing_date
-    )
-
-    price = greeks._price(S0=101.15, volatility=0.26, rf_rate=0.038)
-    print(f"prix = {price:.3f}")
-
-    #delta = greeks.delta()
-    #print(delta)
-    # gamma = greeks.gamma()
-    vega = greeks.vega()
-    # vanna = greeks.vanna()
-    # volga = greeks.volga()
-    
-    # print(gamma)
-    print(vega)
-    # print(vanna)
-    # print(volga)
+        result = OneDimDerivative(self._build_price_function("volga")).second(self.model.market.volatility, h)
+        return result / GREEKS["volga"]["divisor"]
