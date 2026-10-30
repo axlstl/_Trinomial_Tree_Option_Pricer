@@ -138,7 +138,7 @@ if __name__ == "__main__":
     greeks = Greeks(
         option=option,
         market=market,
-        model="binomial",
+        model="trinomial",
         steps=300,
         pricing_date=pricing_date
     )

@@ -4,7 +4,8 @@ from datetime import datetime as dt
 class Option(ABC):
 
     @abstractmethod
-    def payoff(self, spot):
+    def payoff(self, spot:float) -> float:
+        """ each option must implement its own payoff function """
         pass
 
 
