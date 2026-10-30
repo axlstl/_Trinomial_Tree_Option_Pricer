@@ -27,6 +27,7 @@ class Node:
         self.trunk_node = None
 
         self.opt_price = None
+        self.exercise_now = False
         self.cum_proba = 0.0
 
 class TrunkNode:

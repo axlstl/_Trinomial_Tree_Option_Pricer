@@ -6,7 +6,7 @@ from model.trinomial import TrinomialModel
 from options import VanillaOption
 from market import Market
 from model.binomial import BinomialModel
-from export_svg import export_svg
+from svg.export_svg import export_svg
 
 
 if __name__=="__main__":
@@ -15,13 +15,12 @@ if __name__=="__main__":
     from market import Market,Dividend
     from options import VanillaOption
     from model.trinomial import TrinomialModel
-
-
+    #all params
     pricing_date = datetime.now().date()
     maturity_date = pricing_date + timedelta(days=365)
     dividend_date = pricing_date + timedelta(days=180)
 
-    option_params = {"strike":100,"mty_date":maturity_date,"option_type":"call","exercise_type":"european"}
+    option_params = {"strike":100,"mty_date":maturity_date,"option_type":"call","exercise_type":"american"}
     market_params = {"S0":100,"rf_rate":0.05,"volatility":0.2}
     dividend = Dividend(date=dividend_date,amount=5)
 
@@ -30,33 +29,12 @@ if __name__=="__main__":
     market_no_div = Market(**market_params)
     market_div = Market(**market_params,dividends=[dividend])
 
-
     pruning_threshold = 1e-7
     nb_steps = 50
-    model_no_div = TrinomialModel(market_no_div,option,steps=nb_steps,pricing_date=pricing_date,pruning_threshold=pruning_threshold)
+
     model_div = TrinomialModel(market_div,option,steps=nb_steps,pricing_date=pricing_date,pruning_threshold=pruning_threshold)
 
-    print("Sans dividende :",model_no_div.price_from_tree())
-    print("Avec dividende :",model_div.price_from_tree())
+    print("Prix de l'option avec dividende :",model_div.price_from_tree())
 
-    # print("SVG sans dividende :",export_svg(model_no_div,Path(__file__).with_name("tree_no_div.svg")))
-    # print("SVG avec dividende :",export_svg(model_div,Path(__file__).with_name("tree_div.svg")))
-
-    # from black_scholes import BlackScholes
-
-    # # Test avec un seul pas
-    # model_classic = TrinomialModel(market_no_div, option, steps=1, pricing_date=pricing_date, pruning_threshold=pruning_threshold, bs_smoothing=False)
-    # model_bs = TrinomialModel(market_no_div, option, steps=1, pricing_date=pricing_date, pruning_threshold=pruning_threshold, bs_smoothing=True)
-
-    # price_classic = model_classic.price_from_tree()
-    # price_bs_tree = model_bs.price_from_tree()
-    # price_bs = BlackScholes(market_no_div, option).vanilla_pricing(pricing_date)
-
-    # print("\n--- TEST STEPS = 1 ---")
-    # print("Trinomial classique :", price_classic)
-    # print("Trinomial avec BS   :", price_bs_tree)
-    # print("Black-Scholes       :", price_bs)
-    # print("Erreur classique    :", abs(price_classic-price_bs))
-    # print("Erreur avec BS      :", abs(price_bs_tree-price_bs))
-
-    # assert abs(price_bs_tree-price_bs) < 1e-10
+    path_svg = Path(__file__).parent / "tree_div.svg"
+    print("SVG avec dividende :",export_svg(model_div,path_svg))

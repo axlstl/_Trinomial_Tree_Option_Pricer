@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime as dt
+from math import isclose
 
 import numpy as np
 
@@ -66,6 +67,17 @@ class LatticeModel(ABC):
 
         self.last_trunk = curr_trunk
 
+    def update_tree(self) -> None:
+        
+        self.dt = ((self.mty_date - self.start_date).total_seconds() / TIME_BASIS) / self.steps
+        self.index_dt = (self.mty_date - self.start_date) / self.steps
+
+        self.root = TrunkNode(self.S0, 0)
+        self._initialize_parameters()
+        self._build_trunk()
+        self._build_trunk_forwards()
+        self._build_tree()
+
     def _build_tree(self) -> None:
         self._initialize_root()
         curr_trunk = self.root
@@ -75,34 +87,36 @@ class LatticeModel(ABC):
 
     def price_from_tree(self) -> float:
         discount = np.exp(-self.rf_rate * self.dt)
-
+        bs = BlackScholes(self.market, self.option) if self.bs_smoothing else None
         trunk = self.last_trunk
-        node = self._get_bottom_node(trunk)
-
-        if self.bs_smoothing:
-            pricing_date = self.start_date + (self.steps-1)*self.index_dt
-            bs = BlackScholes(self.market, self.option)
-
         # iterate backward through the trunk, pricing each layer from bottom to top
         while trunk is not None:
             node = self._get_bottom_node(trunk)
-
             while node is not None:
-                # initialize terminal prices (IV or BS pricing)
-                if trunk is self.last_trunk:
-                    continuation = (bs.vanilla_pricing(pricing_date, node.underlying_price)
-                                    if self.bs_smoothing else self.option.payoff(node.underlying_price))
-                else:
-                    continuation = discount * self._get_expected_value(node)
-
-                node.opt_price = (max(continuation, self.option.payoff(node.underlying_price))
-                                if self.option.exercise_type == "american" else continuation)
-
+                continuation = self._get_continuation_value(node, discount, bs)
+                self._price_node(node, continuation)
                 node = node.up_node
-
             trunk = trunk.prev_trunk
-
         return self.root_node.opt_price
+
+    def _get_continuation_value(self, node: Node, discount: float, bs: BlackScholes | None) -> float:
+        # BS smoothing replaces only the last time interval.
+        if node.trunk_node is not self.last_trunk:
+            return discount * self._get_expected_value(node)
+        if bs is None:
+            return self.option.payoff(node.underlying_price)
+        pricing_date = self.start_date + (self.steps - 1) * self.index_dt
+        return bs.vanilla_pricing(pricing_date, node.underlying_price)
+
+    def _price_node(self, node: Node, continuation: float) -> None:
+        node.exercise_now = False
+        node.opt_price = continuation
+        if self.option.exercise_type != "american":
+            return
+        payoff = self.option.payoff(node.underlying_price)
+        # Calculating continuation value for svg
+        node.exercise_now = (node.step < self.steps and payoff > 0 and payoff > continuation)
+        node.opt_price = max(continuation, payoff)
 
     def _get_bottom_node(self, trunk:TrunkNode) -> Node:
         node = trunk.down_node

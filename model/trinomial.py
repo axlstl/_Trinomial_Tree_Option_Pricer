@@ -22,6 +22,10 @@ class TrinomialModel(LatticeModel):
         self._build_trunk_forwards()
         self._build_tree()
 
+    def _update_tree(self) -> None:
+        self._map_dividends()
+        super().update_tree()
+
     def _map_dividends(self) -> None:
         dict_div_index = defaultdict(list)
         total_days = (self.mty_date-self.start_date).days

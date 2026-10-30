@@ -1,0 +1,13 @@
+text {font-family: Arial, sans-serif;fill: #334155;font-size: 12px;}
+
+.node:hover {stroke: #0f172a;stroke-width: 2;}
+.regular {fill: #2563eb;}
+
+.pruned {fill: #ea580c;}
+.maturity {fill: #64748b;}
+.grid {stroke: #e2e8f0;stroke-dasharray: 3 5;}
+
+.branch {stroke: #cbd5e1;stroke-width: 0.8;}
+.pruned-branch {stroke: #ea580c;stroke-width: 1.8;}
+
+.exercise {fill: none;stroke: #dc2626;stroke-width: 1.6;}
