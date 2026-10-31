@@ -36,6 +36,4 @@ if __name__=="__main__":
 
     print("Prix de l'option avec dividende :",model_div.price_from_tree())
 
-    path_svg = Path(__file__).resolve().parents[1] / "outputs" / "svg" / "tree_div.svg"
-    path_svg.parent.mkdir(parents=True, exist_ok=True)
-    print("SVG avec dividende :",export_svg(model_div,path_svg))
+    print("Delta de l'option avec dividende :",model_div.greeks.delta())

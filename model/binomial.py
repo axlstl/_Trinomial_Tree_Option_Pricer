@@ -10,10 +10,11 @@ from datetime import datetime as dt
 
 class BinomialModel(LatticeModel):
 
-    def __init__(self, market:Market, option:Option, steps:int, pricing_date:dt, bs_smoothing:bool = False, 
-                 pruning_threshold:float = None):
+    def __init__(self, market: Market, option: Option, steps: int, pricing_date: dt,
+                 bs_smoothing: bool = False, pruning_threshold: float | None = None,
+                 keep_tree: bool = True) -> None:
         
-        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold)
+        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold, keep_tree)
 
         if self.market.dividends:
             raise ValueError("no dividends allowed for binomial model")
@@ -37,18 +38,17 @@ class BinomialModel(LatticeModel):
         curr_trunk = self.root
         curr_trunk.forward = self.S0
 
-        # computing forwards by iterating through the trunk 
+        #computing forwards by iterating through the trunk 
         while curr_trunk.next_trunk is not None:
             next_trunk = curr_trunk.next_trunk
             next_trunk.forward = curr_trunk.forward * np.exp(self.rf_rate * self.dt)
             curr_trunk = next_trunk
 
     def get_child(self, up_count:int, children:dict, step:int, next_trunk:TrunkNode) -> dict:
-        #create a node or reuse existing children for recombination
+        #creates a node or reuse existing children for recombination
         if up_count not in children:
-            child = Node(next_trunk.forward * self.alpha**(2 * up_count - step), step)
+            child = Node(next_trunk.forward * self.alpha**(2 * up_count - step), next_trunk)
             child.up_count = up_count
-            child.trunk_node = next_trunk
             children[up_count] = child
         return children[up_count]
     

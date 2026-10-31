@@ -23,6 +23,8 @@ STYLESHEET = Path(__file__).with_name("tree_style.css")
 
 def export_svg(model: LatticeModel, filename: str | Path = "tree.svg") -> Path:
 
+    if not model.keep_tree:
+        raise ValueError("cant create the svg document if keep_tree=False")
     if model.root_node.opt_price is None:
         raise ValueError("Please price the option first before trying to export the SVG.")
 
@@ -99,10 +101,10 @@ class TreeSvg:
 
         self.positions = {}
   
-        for _, nodes in self.columns:
+        for trunk, nodes in self.columns:
+            x = SVG_SIDE_MARGIN + trunk.step * self.x_spacing
             for node in nodes:
 
-                x = SVG_SIDE_MARGIN + node.step * self.x_spacing
                 change = 100 * (node.underlying_price / self.model.S0 - 1)
                 self.positions[node] = (x, -change * self.y_spacing)
 
@@ -175,7 +177,7 @@ class TreeSvg:
 
     def _node_label(self, node: Node) -> str:
         label = (
-                f"Noeud {node.step} / k = {node.up_count}\n"
+                f"Noeud {node.trunk_node.step} / k = {node.up_count}\n"
                 f"Spot = {node.underlying_price:.2f}\n"
                 f"Prix de l'option = {node.opt_price:.2f}\n"
                 f"Probabilité cumulée = {node.cum_proba:.4g}"

@@ -1,10 +1,7 @@
 TIME_BASIS = 365*24*60*60
 TOL_THRESHOLD = 1e-4
 
-# Default calculation settings. A supplied or calibrated Greek step takes priority.
-DEFAULT_RELATIVE_GREEK_STEP = 0.01
-DEFAULT_VOLATILITY_STEP = 0.01
-DEFAULT_THETA_DAYS = 1
+#Model base values
 DEFAULT_PRUNING_THRESHOLD = 1e-7
 DEFAULT_STEPS = 50
 
@@ -20,7 +17,12 @@ SVG_NODE_COUNT_OFFSET = 35
 SVG_DIVIDEND_OFFSET = 15
 SVG_EXERCISE_RING_OFFSET = 3
 
-# Inputs, derivative order and unit conversion for each Greek.
+# Default calculation settings for greeks.
+DEFAULT_RELATIVE_GREEK_STEP = 0.01
+DEFAULT_VOLATILITY_STEP = 0.01
+DEFAULT_THETA_DAYS = 1
+
+#class attributes, derivative order and unit conversions for every greek
 GREEKS = {
     "delta": {
         "inputs": ["market.S0"],

@@ -10,9 +10,10 @@ from src.constants import TIME_BASIS
 from .lattice import LatticeModel
 
 class TrinomialModel(LatticeModel):
-    def __init__(self, market:Market, option:Option, steps:int, pricing_date:dt, 
-                 bs_smoothing:bool = False, pruning_threshold:float = None):
-        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold)
+    def __init__(self, market: Market, option: Option, steps: int, pricing_date: dt,
+                 bs_smoothing: bool = False, pruning_threshold: float | None = None,
+                 keep_tree: bool = True) -> None:
+        super().__init__(market, option, steps, pricing_date, bs_smoothing, pruning_threshold, keep_tree)
 
         # build the trinomial tree during initialization
         self._initialize_parameters()
@@ -110,8 +111,7 @@ class TrinomialModel(LatticeModel):
 
         if next_node is None:
 
-            next_node = Node(node.underlying_price * self.alpha**nb_up, node.step)
-            next_node.trunk_node = node.trunk_node
+            next_node = Node(node.underlying_price * self.alpha**nb_up, node.trunk_node)
             next_node.up_count = node.up_count + nb_up
 
             if nb_up == 1:
@@ -131,8 +131,8 @@ class TrinomialModel(LatticeModel):
         and sum(p_i*S_i^2) = V + E^2"""
         next_trunk = curr_trunk.next_trunk
 
-        next_mid_node = Node(next_trunk.forward, next_trunk.step)
-        next_mid_node.trunk_node, next_mid_node.up_count = next_trunk, 0   
+        next_mid_node = Node(next_trunk.forward, next_trunk)
+        next_mid_node.up_count = 0
         next_trunk.up_node = next_trunk.mid_node = next_trunk.down_node = next_mid_node
 
         curr_node = self._get_bottom_node(curr_trunk)

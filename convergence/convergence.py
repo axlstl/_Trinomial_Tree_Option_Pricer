@@ -55,7 +55,8 @@ class Convergence:
         # time for pricing
         pricing_time = time.perf_counter() - pricing_start
 
-        # time for pricing + bulding tree
+        tree.clear_tree()
+        # Total time includes building, pricing and clearing the tree.
         running_time = time.perf_counter() - start
 
         return (tree_price, pricing_time, running_time) if get_times else tree_price

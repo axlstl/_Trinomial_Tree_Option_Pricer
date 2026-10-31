@@ -52,8 +52,8 @@ class Greeks:
             float: Option price with the updated inputs.
         """
         model_copy = copy(self.model)
-        # Here we copy the model and update its attributes with the values provided in dict_pricing_inputs.
-        # This allows us to compute the option price with the updated inputs without modifying the original model.
+        # Detach the shared tree so update_tree() only clears the copy's tree.
+        model_copy.root = model_copy.root_node = model_copy.last_trunk = None
         for attribute, value in dict_pricing_inputs.items():
             if isinstance(value, dict):
                 target = copy(getattr(model_copy, attribute))
@@ -63,7 +63,9 @@ class Greeks:
             else:
                 setattr(model_copy, attribute, value)
         model_copy.update_tree()
-        return model_copy.price_from_tree()
+        price = model_copy.price_from_tree()
+        model_copy.clear_tree()
+        return price
 
     def _build_price_function(self, name: str) -> Callable[..., float]:
         """generalistic pricing function for any greek"""
