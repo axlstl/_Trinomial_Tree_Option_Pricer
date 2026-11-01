@@ -53,7 +53,9 @@ class Greeks:
         """
         model_copy = copy(self.model)
         # Detach the shared tree so update_tree() only clears the copy's tree.
-        model_copy.root = model_copy.root_node = model_copy.last_trunk = None
+        model_copy.root = None
+        model_copy.root_node = None
+        model_copy.last_trunk = None
         for attribute, value in dict_pricing_inputs.items():
             if isinstance(value, dict):
                 target = copy(getattr(model_copy, attribute))

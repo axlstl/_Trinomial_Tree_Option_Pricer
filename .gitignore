@@ -1,5 +1,14 @@
 .vscode
 __pycache__
 graphs
-.svg
-.html
+*.svg
+*.html
+*.csv
+*.png
+*.jpg
+*.jpeg
+results.json
+src/memory_benchmark.py
+checkstyle_report.html
+checkstyle_report.txt
+
